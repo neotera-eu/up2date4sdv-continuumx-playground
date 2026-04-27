@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-edge
+spec:
+  selector:
+    matchLabels:
+      app: nginx-edge
+  template:
+    metadata:
+      labels:
+        app: nginx-edge
+    spec:
+      nodeName: u2deb-edge
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+      tolerations:
+      - key: node-role.kubernetes.io/edge
+        operator: Exists
+        effect: NoSchedule
+
