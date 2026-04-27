@@ -26,7 +26,7 @@ ContinuumX also supports **MQTT**, enabling edge devices to communicate through 
 │  VirtualBox Host                    │     192.168.56.0/24
 │                                     │
 │  ┌──────────────────────────────┐   │   ┌──────────────────────────────┐
-│  │  u2deb-cloud  192.168.56.10  │◄──┼──►│  u2deb-edge  192.168.56.11  │
+│  │  u2deb-cloud  192.168.56.10  │◄──┼──►│  u2deb-edge  192.168.56.11   │
 │  │  Debian 13 · K8s v1.32       │   │   │  Debian 13                   │
 │  │  CloudCore v1.23             │   │   │  EdgeCore v1.23              │
 │  │                              │   │   │                              │
@@ -178,40 +178,10 @@ journalctl -u edgecore -n 50 --no-pager
 
 Deploy a demo NGINX pod targeted to the edge node, following the [KubeEdge upstream demo](https://kubeedge.io/docs/setup/install-with-binary#deploy-demo-on-edge-nodes).
 
-**Create the deployment manifest:**
+**Apply deployment manifest:**
 
 ```bash
-cat <<EOF > nginx-edge.yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: nginx-edge
-spec:
-  selector:
-    matchLabels:
-      app: nginx-edge
-  template:
-    metadata:
-      labels:
-        app: nginx-edge
-    spec:
-      nodeName: u2deb-edge
-      containers:
-      - name: nginx
-        image: nginx:alpine
-        ports:
-        - containerPort: 80
-      tolerations:
-      - key: node-role.kubernetes.io/edge
-        operator: Exists
-        effect: NoSchedule
-EOF
-```
-
-**Apply it:**
-
-```bash
-kubectl apply -f nginx-edge.yaml
+kubectl apply -f manifests/templates/nginx-edge.yaml
 ```
 
 **Wait for the pod to reach Running state:**
@@ -237,17 +207,6 @@ NAME                          READY   STATUS    NODE
 nginx-edge-<hash>             1/1     Running   u2deb-edge
 ```
 
-**Confirm NGINX is reachable from the edge node:**
-
-```bash
-# Get the pod IP
-POD_IP=$(kubectl get pod -l app=nginx-edge \
-  -o jsonpath='{.items[0].status.podIP}')
-
-# Curl from the CloudCore VM (routed via the Cilium overlay)
-curl -s --max-time 5 http://${POD_IP} | grep -o '<title>.*</title>'
-# Expected: <title>Welcome to nginx!</title>
-```
 
 **Clean up:**
 
@@ -263,3 +222,8 @@ kubectl delete -f nginx-edge.yaml
 - Browse the [KubeEdge documentation](https://kubeedge.io/docs/) for device management, MQTT integration, and EdgeMesh.
 - Try deploying your own workloads with `nodeName: u2deb-edge` or using node labels and `nodeSelector`.
 - Review the troubleshooting appendices in the install guide for common edge-cloud connectivity issues.
+
+## TODOS
+- Verify pods networking
+- Validate the digital twins infrastrure.
+- Provide a digital twins example for the baseline version.
