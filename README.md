@@ -94,8 +94,8 @@ Download the two pre-built VirtualBox appliances and import them. The VMs ship w
 
 | Appliance | VM | Download |
 |---|---|---|
-| `u2deb-cloud.vdi` | CloudCore (control plane) | [u2deb-edge.vdi.tag.gz](https://drive.google.com/file/d/1RI-MqrhOZ4BdTkz_tthgPjHZImDyjZYr/view?usp=sharing) |
-| `u2deb-edge.vdi` | EdgeCore (edge worker) | [u2deb-edge.vdi.tag.gz](https://drive.google.com/file/d/1RI-MqrhOZ4BdTkz_tthgPjHZImDyjZYr/view?usp=sharing) |
+| `u2deb-cloud.vdi` | CloudCore (control plane) | [u2d4sdv_cloud.vdi.tar.gz](https://drive.google.com/file/d/1owE9avnQFH84rgoHqRonNX7xVDDgO8ip/view?usp=drive_link) |
+| `u2deb-edge.vdi` | EdgeCore (edge worker) | [u2d4sdv_edge.vdi.tar.gz](https://drive.google.com/file/d/1RI-MqrhOZ4BdTkz_tthgPjHZImDyjZYr/view?usp=drive_link) |
 
 ### 2.2 Create the Host-Only Network in VirtualBox
 
