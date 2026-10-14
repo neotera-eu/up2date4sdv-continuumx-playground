@@ -60,7 +60,7 @@ Three guides, to be followed in order.
 
 ### Step 1, Prepare the CloudCore VM
 
-Follow **[`vm0-continuumx-cloudcore-v1_23.md`](./doc/vm0-continuumx-cloudcore-v1_23.md)** to provision a Debian 13 VM running Kubernetes v1.32 with containerd and Flannel CNI, configured and validated as a ready baseline for ContinuumX CloudCore.
+Follow **[`vm0-continuumx-cloudcore-v1.23.md`](./doc/vm0-continuumx-cloudcore-v1.23.md)** to provision a Debian 13 VM running Kubernetes v1.32 with containerd and Flannel CNI, configured and validated as a ready baseline for ContinuumX CloudCore.
 
 At the end of this guide the VM (`u2deb-cloud`, `192.168.56.10`) will have:
 - A fully operational single-node Kubernetes control plane
@@ -68,7 +68,7 @@ At the end of this guide the VM (`u2deb-cloud`, `192.168.56.10`) will have:
 
 ### Step 2, Prepare the EdgeCore VM
 
-Follow **[`vm1-continuumx-edgecore-v1_23.md`](./doc/vm1-continuumx-edgecore-v1_23.md)** to provision a second Debian 13 VM with containerd, configured as a minimal edge worker node baseline.
+Follow **[`vm1-continuumx-edgecore-v1.23.md`](./doc/vm1-continuumx-edgecore-v1.23.md)** to provision a second Debian 13 VM with containerd, configured as a minimal edge worker node baseline.
 
 At the end of this guide the VM (`u2deb-edge`, `192.168.56.11`) will have:
 - containerd installed and running with `SystemdCgroup = true`
