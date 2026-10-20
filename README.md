@@ -21,19 +21,43 @@ ContinuumX also supports **MQTT**, enabling edge devices to communicate through 
 
 ## Reference Topology
 
+<!---
 ```
-┌──────────────────────────────────────┐     Host-Only Network
-│  VirtualBox Host                     │     192.168.56.0/24
-│                                      │
-│  ┌───────────────────────────────┐   │   ┌───────────────────────────────┐
-│  │  u2d4sdv_cloud  192.168.56.10 │◄──┼──►│  u2d4sdv_edge  192.168.56.11  │
-│  │  Debian 13 · K8s v1.32        │   │   │  Debian 13                    │
-│  │  CloudCore cx-v1.23           │   │   │  EdgeCore cx-v1.23            │
-│  │                               │   │   │                               │
-│  │  NAT · Host-Only · Bridged    │   │   │  NAT · Host-Only              │
-│  └───────────────────────────────┘   │   └───────────────────────────────┘
-│                                      │
-└──────────────────────────────────────┘
+┌───────────────────────────────────────────┐     Host-Only Network
+│  VirtualBox Host                          │     192.168.56.0/24
+│                                           │
+│  ┌────────────────────────────────────┐   │   ┌────────────────────────────────────┐
+│  │  VM0: u2d4sdv_cloud  192.168.56.10 │◄──┼──►│  VM1: u2d4sdv_edge  192.168.56.11  │
+│  │  Debian 13 · K8s v1.32             │   │   │  Debian 13                         │
+│  │  CloudCore cx-v1.23                │   │   │  EdgeCore cx-v1.23                 │
+│  │                                    │   │   │                                    │
+│  │  NAT · Host-Only · Bridged         │   │   │  NAT · Host-Only                   │
+│  └────────────────────────────────────┘   │   └────────────────────────────────────┘
+│                                           │
+└───────────────────────────────────────────┘
+```
+-->
+
+```mermaid
+%%{init: {"theme": "neutral"}}%%
+flowchart LR
+    subgraph VBox["VirtualBox Host"]
+        Cloud["`**VM0: u2d4sdv_cloud**
+        192.168.56.10
+        Debian 13 · K8s v1.32
+        CloudCore cx-v1.23
+
+        NAT · Host-Only · Bridged`"]
+    end
+
+    Edge["`**VM1: u2d4sdv_edge**
+    192.168.56.11
+    Debian 13
+    EdgeCore cx-v1.23
+    
+    NAT · Host-Only`"]
+
+    Cloud <-->|"Host-Only Network<br/>192.168.56.0/24"| Edge
 ```
 
 | VM | Hostname | Host-Only IP | Role |
