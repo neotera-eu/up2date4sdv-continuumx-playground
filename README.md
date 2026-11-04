@@ -289,7 +289,8 @@ Deploy a demo NGINX pod targeted to the edge node, following the [KubeEdge upstr
 # On u2deb-cloud
 kubectl apply -f nginx-edge.yaml
 ```
-> The yaml fle is available at [manifests/templates/nginx-edge.yaml](manifests/templates/nginx-edge.yaml). It is also available at the u2deb-cloud root folder.
+> The yaml fle is available at [manifests/templates/nginx-edge.yaml](manifests/templates/nginx-edge.yaml). It is also available at the u2deb-cloud root folder. If it is not present at your CloudCore node you can copy it from the aforementioned location.
+ 
 **Wait for the pod to reach Running state:**
 
 ```bash
