@@ -1,0 +1,16 @@
+#!/bin/sh
+b=""
+p=""
+for a in "$@"; do
+  case "$a" in
+    --bundle=*) b=${a#--bundle=} ;;
+  esac
+  if [ "$p" = "--bundle" ] || [ "$p" = "-b" ]; then
+    b=$a
+  fi
+  p=$a
+done
+if [ -n "$b" ] && [ -f "$b/config.json" ]; then
+  sed -i -E 's/,"oomScoreAdj":-?[0-9]+//; s/"oomScoreAdj":-?[0-9]+,//' "$b/config.json"
+fi
+exec /usr/bin/crun "$@"

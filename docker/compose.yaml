@@ -1,0 +1,134 @@
+# ContinuumX playground stack (Podman Compose).
+#
+# Things you may want to change:
+# - ports below (SSH, demo UI, MQTT, CloudCore, Kubernetes API)
+# - image tags (continuumx-playground-*:1.23)
+# - restart policy
+#
+# Volumes keep state after the system is up (cluster, edge config, images).
+# Do not use "make prune" if you want to keep that state.
+
+name: continuumx-playground
+
+services:
+  mqtt-broker:
+    image: docker.io/library/eclipse-mosquitto:2
+    hostname: mqtt-broker
+    restart: unless-stopped
+    networks:
+      - cxnet
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro,Z
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -h 127.0.0.1 -t '$$SYS/#' -C 1 -W 3 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  cloud:
+    build: ./cloud
+    image: continuumx-playground-cloud:1.23
+    hostname: u2deb-cloud
+    privileged: true
+    cgroup: private
+    restart: unless-stopped
+    pids_limit: -1
+    security_opt:
+      - label=disable
+      - seccomp=unconfined
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    networks:
+      - cxnet
+    ports:
+      - "6443:6443"
+      - "9443:9443"
+      - "30080:30080"
+      - "10000:10000"
+      - "10002:10002"
+      - "2222:22"
+    tmpfs:
+      - /run
+      - /run/lock
+      - /tmp
+    volumes:
+      - cx-join:/var/cx-join
+      - cx-cloud-containerd:/var/lib/containerd
+      - cx-cloud-kubelet:/var/lib/kubelet
+      - cx-cloud-etcd:/var/lib/etcd
+      - cx-cloud-kubernetes:/etc/kubernetes
+      - cx-cloud-playground:/var/lib/cx-playground
+      - /lib/modules:/lib/modules:ro
+    sysctls:
+      - net.ipv4.ip_forward=1
+    healthcheck:
+      test: ["CMD", "test", "-f", "/var/cx-join/cloud-ready"]
+      interval: 20s
+      timeout: 5s
+      retries: 40
+      start_period: 180s
+
+  edge:
+    build: ./edge
+    image: continuumx-playground-edge:1.23
+    hostname: u2deb-edge
+    privileged: true
+    cgroup: private
+    restart: unless-stopped
+    pids_limit: -1
+    security_opt:
+      - label=disable
+      - seccomp=unconfined
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    networks:
+      - cxnet
+    ports:
+      - "2223:22"
+      - "3000:3000"
+    depends_on:
+      - cloud
+      - mqtt-broker
+    tmpfs:
+      - /run
+      - /run/lock
+      - /tmp
+    volumes:
+      - cx-join:/var/cx-join
+      - cx-edge-containerd:/var/lib/containerd
+      - cx-edge-kubeedge:/etc/kubeedge
+      - /lib/modules:/lib/modules:ro
+    sysctls:
+      - net.ipv4.ip_forward=1
+    healthcheck:
+      test: ["CMD", "systemctl", "is-active", "--quiet", "edgecore"]
+      interval: 20s
+      timeout: 5s
+      retries: 30
+      start_period: 120s
+
+  # Uses the same network as edge so ServiceBus can call 127.0.0.1:3000
+  servicebus-demo:
+    build: ./servicebus-demo
+    image: continuumx-playground-servicebus-demo:1.23
+    restart: unless-stopped
+    network_mode: "service:edge"
+    depends_on:
+      - edge
+
+networks:
+  cxnet:
+    driver: bridge
+
+volumes:
+  cx-join:
+  cx-cloud-containerd:
+  cx-cloud-kubelet:
+  cx-cloud-etcd:
+  cx-cloud-kubernetes:
+  cx-cloud-playground:
+  cx-edge-containerd:
+  cx-edge-kubeedge:

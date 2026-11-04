@@ -1,0 +1,17 @@
+[Unit]
+Description=edge bootstrap
+After=containerd.service
+Wants=containerd.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/cx-bootstrap.sh
+StandardOutput=journal+console
+StandardError=journal+console
+TimeoutStartSec=infinity
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target
