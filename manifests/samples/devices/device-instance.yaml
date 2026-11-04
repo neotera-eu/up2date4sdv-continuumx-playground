@@ -1,0 +1,142 @@
+
+apiVersion: devices.kubeedge.io/v1beta1
+kind: Device
+metadata:
+  name: environmental-controller-001
+  namespace: default
+  labels:
+    app: up2date4sdv-demo
+    device-type: environmental-controller
+    location: laboratory
+  annotations:
+    description: "First virtual environmental controller"
+    asset-id: "ENV-001"
+    manufacturer: "Demo"
+    installation-site: "Laboratory A"
+
+spec:
+  deviceModelRef:
+    name: environmental-controller
+
+  nodeName: u2deb-edge  # Update with your edge node name
+
+  protocol:
+    protocolName: virtual
+    configData:
+      deviceId: "ENV-001"
+      simulator: true
+      endpoint: "virtual://environmental-controller-001"
+      updateIntervalSeconds: 10
+
+  stateReport:
+    reportToCloud: true
+    reportCycle: 10000000000
+
+  properties:
+    - name: temperature
+      collectCycle: 5000000000
+      reportCycle: 10000000000
+      reportToCloud: true
+      visitors:
+        protocolName: virtual
+        configData:
+          source: simulator
+          channel: temperature
+
+    - name: humidity
+      collectCycle: 5000000000
+      reportCycle: 10000000000
+      reportToCloud: true
+      visitors:
+        protocolName: virtual
+        configData:
+          source: simulator
+          channel: humidity
+
+    - name: pressure
+      collectCycle: 5000000000
+      reportCycle: 10000000000
+      reportToCloud: true
+      visitors:
+        protocolName: virtual
+        configData:
+          source: simulator
+          channel: pressure
+
+    - name: lightLevel
+      collectCycle: 5000000000
+      reportCycle: 10000000000
+      reportToCloud: true
+
+    - name: batteryLevel
+      collectCycle: 30000000000
+      reportCycle: 60000000000
+      reportToCloud: true
+
+    - name: voltage
+      collectCycle: 30000000000
+      reportCycle: 60000000000
+      reportToCloud: true
+
+    - name: online
+      collectCycle: 10000000000
+      reportCycle: 10000000000
+      reportToCloud: true
+
+    - name: firmwareVersion
+      reportToCloud: true
+
+    - name: serialNumber
+      reportToCloud: true
+
+    - name: operatingMode
+      desired:
+        value: "AUTO"
+        metadata:
+          source: cloud
+          reason: initial-configuration
+      reportToCloud: true
+
+    - name: samplingInterval
+      desired:
+        value: "10"
+        metadata:
+          source: cloud
+          reason: initial-configuration
+      reportToCloud: true
+
+    - name: temperatureSetpoint
+      desired:
+        value: "22.0"
+        metadata:
+          source: cloud
+          reason: initial-configuration
+      reportToCloud: true
+
+    - name: fanEnabled
+      desired:
+        value: "true"
+        metadata:
+          source: cloud
+          reason: initial-configuration
+      reportToCloud: true
+
+    - name: alarmEnabled
+      desired:
+        value: "true"
+        metadata:
+          source: cloud
+          reason: initial-configuration
+      reportToCloud: true
+
+  methods:
+    - name: enableCooling
+      description: "Enable fan and configure temperature target"
+      propertyNames:
+        - fanEnabled
+        - temperatureSetpoint
+
+    - name: configureSampling
+      description: "Update the sampling interval"
+      propertyNames:
+        - samplingInterval

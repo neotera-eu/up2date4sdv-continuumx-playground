@@ -323,6 +323,248 @@ kubectl delete -f nginx-edge.yaml
 
 ---
 
+## Device Management and Digital Twin Playground
+
+This exercise demonstrates how ContinuumX represents an IoT device using a reusable **DeviceModel**, creates a **Device** instance, and manages the *desired* part of its digital twin from the Kubernetes control plane. It builds on the running CloudCore/EdgeCore cluster verified above and uses the KubeEdge-compatible `devices.kubeedge.io/v1beta1` API.
+
+> **Scope:** This exercise covers device-model deployment, device instantiation, configuration inspection, and cloud-side desired-state changes.
+
+### 1. Architecture and prerequisites
+
+The ContinuumX control plane stores the `DeviceModel` and `Device` Custom Resources. CloudCore's device management components make configuration available to the edge infrastructure. EdgeCore provides the local device-twin infrastructure; a compatible device mapper would eventually perform I/O and report real state. A **device mapper** is an edge-side software component that translates between ContinuumX's device model/twin interfaces and a real or simulated device's protocol. It reads measurements, applies requested settings, and publishes reported property values. No mapper is installed or executed in this exercise.
+
+```mermaid
+graph TB
+    User["User: kubectl"]
+
+    subgraph Cloud
+        Model["DeviceModel: environmental-controller"]
+        Device["Device: environmental-controller-001"]
+        CloudTwin["Cloud Device Twin"]
+        Status["DeviceStatus: runtime state"]
+
+        Model -->|Defines properties| Device
+        Device -->|Desired state| CloudTwin
+        CloudTwin -.-> Status
+    end
+
+    subgraph Edge
+        EdgeTwin["Edge Device Twin"]
+        Mapper["Virtual Device Mapper - Future Step"]
+        Virtual["Simulated Environmental Controller"]
+
+        EdgeTwin -.-> Mapper
+        Mapper -.-> Virtual
+    end
+    %%User -->|Apply and patch| Device
+    %%User -.->|Inspect| Status
+    User ---> Cloud
+
+    CloudTwin -->|Sync desired state| EdgeTwin
+    EdgeTwin -.->|Sync reported state| CloudTwin
+    %%Cloud --->|Sync desired state| Edge
+
+    classDef resource fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+    classDef twin fill:#d1fae5,stroke:#059669,color:#065f46
+    classDef future fill:#f3f4f6,stroke:#9ca3af,color:#6b7280
+
+    class Model,Device,Status resource
+    class CloudTwin,EdgeTwin twin
+    class Mapper,Virtual future
+
+```
+
+Run the following from the **CloudCore VM** (`u2d4sdv_cloud`), where `kubectl` is configured:
+
+```bash
+kubectl get nodes -o wide
+kubectl api-resources --api-group=devices.kubeedge.io
+kubectl get crd devicemodels.devices.kubeedge.io devices.devices.kubeedge.io
+```
+
+Both the cloud and edge nodes should be `Ready`, and the cluster must serve the `DeviceModel` and `Device` resources. If the CRDs are not present, review the ContinuumX CloudCore installation before continuing. The following examples use the `default` namespace.
+
+#### Copy the sample manifests to the CloudCore VM
+
+The two manifests are stored in the playground repository at [`manifests/samples/devices/device-model.yaml`](manifests/samples/devices/device-model.yaml) and [`manifests/samples/devices/device-instance.yaml`](manifests/samples/devices/device-instance.yaml). **Only the commands in this transfer subsection run on your host computer** (the machine containing your local checkout). All subsequent `kubectl` commands run **inside the CloudCore VM**, not on the host or EdgeCore VM.
+
+From a terminal on your **host**, change to the playground repository root and create a directory on the cloud VM using SSH:
+
+```bash
+# HOST computer, from the ContinuumX Playground repository root
+ssh user@192.168.56.10 'mkdir -p ~/continuumx-device-demo'
+```
+
+Copy both YAML files with SCP:
+
+```bash
+# HOST computer, from the ContinuumX Playground repository root
+scp manifests/samples/devices/device-model.yaml \
+    manifests/samples/devices/device-instance.yaml \
+    user@192.168.56.10:~/continuumx-device-demo/
+```
+
+The address `192.168.56.10` and account `user` follow the testbed's reference topology. Use the actual SSH-reachable cloud VM address if yours differs; the VirtualBox host-only address must be reachable from the host.
+
+Now open an SSH session to the **CloudCore VM**:
+
+```bash
+# HOST computer
+ssh user@192.168.56.10
+```
+
+From this point onward, execute the example commands **on the CloudCore VM**. Change to the directory containing the transferred files and verify them:
+
+```bash
+# CLOUD VM (u2d4sdv_cloud)
+cd ~/continuumx-device-demo
+ls -l device-model.yaml device-instance.yaml
+kubectl get nodes -o wide
+```
+
+> **Kubernetes permissions:** The commands assume that the SSH user's `kubectl` is configured with valid credentials. If the cluster kubeconfig is available only to root, use the properly configured administrator shell for the remaining commands (for example, `sudo -i`) and change to `/home/user/continuumx-device-demo` before proceeding.
+
+
+### 2. Inspect the model's supported properties
+
+The sample is a virtual industrial environmental controller. Its model specifies **14 properties** spanning telemetry, identity information, and configuration or control:
+
+| Property | Type | Access | Description / unit |
+|---|---|---|---|
+| `temperature` | `DOUBLE` | `ReadOnly` | Ambient temperature (°C, −40 to 125) |
+| `humidity` | `FLOAT` | `ReadOnly` | Relative humidity (%, 0 to 100) |
+| `pressure` | `DOUBLE` | `ReadOnly` | Atmospheric pressure (hPa, 300 to 1200) |
+| `lightLevel` | `INT` | `ReadOnly` | Illuminance (lux, 0 to 100000) |
+| `batteryLevel` | `INT` | `ReadOnly` | Battery charge (%, 0 to 100) |
+| `voltage` | `FLOAT` | `ReadOnly` | Supply voltage (V, 0 to 5) |
+| `online` | `BOOLEAN` | `ReadOnly` | Device connectivity indication |
+| `firmwareVersion` | `STRING` | `ReadOnly` | Installed firmware version |
+| `serialNumber` | `STRING` | `ReadOnly` | Device serial number |
+| `operatingMode` | `STRING` | `ReadWrite` | `AUTO`, `MANUAL`, or `ECO` |
+| `samplingInterval` | `INT` | `ReadWrite` | Sampling interval (s, 1 to 3600) |
+| `temperatureSetpoint` | `DOUBLE` | `ReadWrite` | Target temperature (°C, 10 to 40) |
+| `fanEnabled` | `BOOLEAN` | `ReadWrite` | Fan enable control |
+| `alarmEnabled` | `BOOLEAN` | `ReadWrite` | Alarm enable control |
+
+The property descriptions, types, ranges, units, and access modes describe the model. Application-level validation and enforcement of device behavior remain the responsibility of the mapper/device integration.
+
+### 3. Apply the DeviceModel
+
+The model is already provided in this repository:
+
+**[`manifests/samples/devices/device-model.yaml`](manifests/samples/devices/device-model.yaml)**
+
+From `~/continuumx-device-demo` on the **CloudCore VM**:
+
+```bash
+kubectl apply --dry-run=server -f device-model.yaml
+kubectl apply -f device-model.yaml
+kubectl get devicemodels.devices.kubeedge.io -n default
+kubectl describe devicemodel environmental-controller -n default
+```
+
+The manifest defines the `environmental-controller` model with a custom `virtual` protocol identifier. This is a **placeholder for an explicit mapper**, not an automatically functioning ContinuumX protocol implementation.
+
+### 4. Instantiate the Device
+
+The instance manifest is also included:
+
+**[`manifests/samples/devices/device-instance.yaml`](manifests/samples/devices/device-instance.yaml)**
+
+It defines `environmental-controller-001`, references the model, includes per-property acquisition/reporting configuration and protocol visitor metadata, defines `enableCooling` and `configureSampling` methods, and initializes five desired values:
+
+| Writable property | Initial desired value |
+|---|---|
+| `operatingMode` | `AUTO` |
+| `samplingInterval` | `10` |
+| `temperatureSetpoint` | `22.0` |
+| `fanEnabled` | `true` |
+| `alarmEnabled` | `true` |
+
+**Important (node assignment):** Before deployment, check the **actual** edge worker node name using `kubectl get nodes` (from the cloud node) and edit `spec.nodeName` in the instance YAML so it names the intended **edge worker** (not the cloud node). The name must match the Kubernetes Node resource exactly.
+
+After checking the instance YAML, validate and apply it:
+
+```bash
+kubectl apply --dry-run=server -f device-instance.yaml
+kubectl apply -f device-instance.yaml
+kubectl get devices.devices.kubeedge.io -n default -o wide
+kubectl get device environmental-controller-001 -n default -o yaml
+```
+
+The custom `virtual` protocol, its `configData`, and the property visitors are descriptive until a compatible mapper is implemented. Server-side dry-run validates against the **installed CRD**; inspect the persisted resource to detect unsupported fields that may be pruned by that CRD:
+
+```bash
+kubectl get device environmental-controller-001 -n default \
+  -o jsonpath='{.spec.nodeName}{"\n"}{range .spec.properties[*]}{.name}{" => "}{.desired.value}{"\n"}{end}'
+```
+
+### 5. Verify the registered device configuration
+
+Verify both resources and inspect the initial desired-state entries:
+
+```bash
+kubectl get devicemodel environmental-controller -n default -o yaml
+kubectl get device environmental-controller-001 -n default \
+  -o jsonpath='{range .spec.properties[?(@.desired)]}{.name}{": "}{.desired.value}{"\n"}{end}'
+```
+
+If the `jsonpath` filter differs in behavior between `kubectl` versions, inspect the full `kubectl get device ... -o yaml` output instead. A successful deployment at this stage proves that the control plane accepts and stores the device model and instance; it does **not** by itself prove live device connectivity or sensor reporting.
+
+### 6. Modify desired device-twin properties
+
+Desired values live in `spec.properties[].desired.value` in the `Device` resource. From the CloudCore VM, patch the instance to request a new target temperature:
+
+```bash
+kubectl patch device environmental-controller-001 -n default \
+  --type=json \
+  -p='[{"op":"replace","path":"/spec/properties/11/desired/value","value":"24.0"}]'
+```
+
+Inspect the change:
+
+```bash
+kubectl get device environmental-controller-001 -n default \
+  -o jsonpath='{.spec.properties[11].name}{": "}{.spec.properties[11].desired.value}{"\n"}'
+```
+
+The output should be `temperatureSetpoint: 24.0`. The array index `11` refers to the **twelfth property in the provided YAML**; it is specific to this sample's property order.
+
+As a second example, request `ECO` mode, a 30-second sampling interval, and the fan disabled:
+
+```bash
+kubectl patch device environmental-controller-001 -n default \
+  --type=json \
+  -p='[
+    {"op":"replace","path":"/spec/properties/9/desired/value","value":"ECO"},
+    {"op":"replace","path":"/spec/properties/10/desired/value","value":"30"},
+    {"op":"replace","path":"/spec/properties/12/desired/value","value":"false"}
+  ]'
+```
+
+Check the requested values:
+
+```bash
+kubectl get device environmental-controller-001 -n default -o yaml
+```
+
+These commands exercise **cloud-side desired-state configuration**. When a compatible mapper is added in a later exercise, it can consume the updated desired values, apply them to the simulated device, and report the resulting actual values through the twin infrastructure. Until then, **do not expect desired and reported states to converge automatically**.
+
+**Optional reset:** Reapply the original device instance manifest to restore the initial desired values:
+
+```bash
+kubectl apply -f device-instance.yaml
+```
+
+**Optional cleanup** (delete the device instance before its model):
+
+```bash
+kubectl delete -f device-instance.yaml
+kubectl delete -f device-model.yaml
+```
+
+---
+
 ## What's Next?
 
 - Explore the [ContinuumX README](https://github.com/neotera-eu/continuumx) for the full feature set.
