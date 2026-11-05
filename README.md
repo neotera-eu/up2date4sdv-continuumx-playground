@@ -4,6 +4,37 @@ A hands-on testbed for [ContinuumX](https://github.com/neotera-eu/continuumx), t
 
 This playground gets you to a running two-node cluster: a Kubernetes control plane running ContinuumX **CloudCore**, and an edge worker node running ContinuumX **EdgeCore**. Once it is up, you deploy a real workload (NGINX) to the edge node and verify end-to-end connectivity.
 
+## Table of Contents
+
+- [What is ContinuumX?](#what-is-continuumx)
+- [Reference Topology](#reference-topology)
+- [Getting Started](#getting-started)
+- [Option 1, Build from Scratch](#option-1-build-from-scratch)
+  - [Step 1, Prepare the CloudCore VM](#step-1-prepare-the-cloudcore-vm)
+  - [Step 2, Prepare the EdgeCore VM](#step-2-prepare-the-edgecore-vm)
+  - [Step 3, Install CloudCore and EdgeCore](#step-3-install-cloudcore-and-edgecore)
+- [Option 2, Create VMs from Pre-Built VDI Disks](#option-2-create-vms-from-pre-built-vdi-disks)
+  - [2.1 Download and Extract the VDI Disks](#21-download-and-extract-the-vdi-disks)
+  - [2.2 Create the Host-Only Network in VirtualBox](#22-create-the-host-only-network-in-virtualbox)
+  - [2.3 Create the Hoard Disks in VirtualBox](#23-create-the-hoard-disks-in-virtualbox)
+  - [2.4 Create the CloudCore VM (`u2d4sdv_cloud`) from Its VDI](#24-create-the-cloudcore-vm-u2d4sdv_cloud-from-its-vdi)
+  - [2.5 Create the EdgeCore VM (`u2d4sdv_edge`) from Its VDI](#25-create-the-edgecore-vm-u2d4sdv_edge-from-its-vdi)
+  - [2.6 VMs user](#26-vms-user)
+  - [2.7 Start Both VMs](#27-start-both-vms)
+- [Verify the Testbed](#verify-the-testbed)
+  - [Check 1, Edge Node Has Joined and Is Ready](#check-1-edge-node-has-joined-and-is-ready)
+  - [Check 2, Deploy NGINX to the Edge Node](#check-2-deploy-nginx-to-the-edge-node)
+- [Device Management and Digital Twin Playground](#device-management-and-digital-twin-playground)
+  - [1. Architecture and prerequisites](#1-architecture-and-prerequisites)
+    - [Copy the sample manifests to the CloudCore VM](#copy-the-sample-manifests-to-the-cloudcore-vm)
+  - [2. Inspect the model's supported properties](#2-inspect-the-models-supported-properties)
+  - [3. Apply the DeviceModel](#3-apply-the-devicemodel)
+  - [4. Instantiate the Device](#4-instantiate-the-device)
+  - [5. Verify the registered device configuration](#5-verify-the-registered-device-configuration)
+  - [6. Modify desired device-twin properties](#6-modify-desired-device-twin-properties)
+- [What's Next?](#whats-next)
+- [TODOS](#todos)
+
 ---
 
 ## What is ContinuumX?
@@ -356,9 +387,9 @@ graph TB
         EdgeTwin -.-> Mapper
         Mapper -.-> Virtual
     end
-    %%User -->|Apply and patch| Device
-    %%User -.->|Inspect| Status
-    User ---> Cloud
+    User -->|Apply and patch| Device
+    User -.->|Inspect| Status
+    %%User ---> Cloud
 
     CloudTwin -->|Sync desired state| EdgeTwin
     EdgeTwin -.->|Sync reported state| CloudTwin
