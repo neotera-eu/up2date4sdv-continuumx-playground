@@ -12,13 +12,15 @@ spec:
         app: nginx-edge
     spec:
       nodeName: u2deb-edge
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
       containers:
       - name: nginx
         image: nginx:alpine
         ports:
         - containerPort: 80
+          protocol: TCP
       tolerations:
       - key: node-role.kubernetes.io/edge
         operator: Exists
         effect: NoSchedule
-
