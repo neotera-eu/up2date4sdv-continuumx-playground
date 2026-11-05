@@ -1,142 +1,232 @@
-
+# ContinuumX Playground: simulated vehicle thermal-management peripheral ECU
+# This custom virtual-ethernet protocol requires a mapper
 apiVersion: devices.kubeedge.io/v1beta1
 kind: Device
 metadata:
-  name: environmental-controller-001
+  name: automotive-thermal-ecu-001
   namespace: default
   labels:
     app: up2date4sdv-demo
-    device-type: environmental-controller
-    location: laboratory
+    device-type: automotive-thermal-ecu
+    vehicle-domain: thermal-management
   annotations:
-    description: "First virtual environmental controller"
-    asset-id: "ENV-001"
-    manufacturer: "Demo"
-    installation-site: "Laboratory A"
-
+    description: Simulated vehicle thermal-management peripheral ECU connected to the central ECU
+    asset-id: THERM-ECU-001
+    vehicle-subsystem: cooling
+    network-interface: Simulated automotive Ethernet link; no physical peripheral is connected
 spec:
   deviceModelRef:
-    name: environmental-controller
-
-  nodeName: u2deb-edge  # Update with your edge node name
-
+    name: automotive-thermal-ecu
+  nodeName: u2deb-edge
   protocol:
-    protocolName: virtual
+    protocolName: virtual-ethernet
     configData:
-      deviceId: "ENV-001"
+      deviceId: THERM-ECU-001
       simulator: true
-      endpoint: "virtual://environmental-controller-001"
+      endpoint: virtual-ethernet://automotive-thermal-ecu-001
       updateIntervalSeconds: 10
-
+      transport: simulated-ethernet
   stateReport:
     reportToCloud: true
     reportCycle: 10000000000
-
   properties:
-    - name: temperature
-      collectCycle: 5000000000
-      reportCycle: 10000000000
-      reportToCloud: true
-      visitors:
-        protocolName: virtual
-        configData:
-          source: simulator
-          channel: temperature
-
-    - name: humidity
-      collectCycle: 5000000000
-      reportCycle: 10000000000
-      reportToCloud: true
-      visitors:
-        protocolName: virtual
-        configData:
-          source: simulator
-          channel: humidity
-
-    - name: pressure
-      collectCycle: 5000000000
-      reportCycle: 10000000000
-      reportToCloud: true
-      visitors:
-        protocolName: virtual
-        configData:
-          source: simulator
-          channel: pressure
-
-    - name: lightLevel
-      collectCycle: 5000000000
-      reportCycle: 10000000000
-      reportToCloud: true
-
-    - name: batteryLevel
-      collectCycle: 30000000000
-      reportCycle: 60000000000
-      reportToCloud: true
-
-    - name: voltage
-      collectCycle: 30000000000
-      reportCycle: 60000000000
-      reportToCloud: true
-
-    - name: online
-      collectCycle: 10000000000
-      reportCycle: 10000000000
-      reportToCloud: true
-
-    - name: firmwareVersion
-      reportToCloud: true
-
-    - name: serialNumber
-      reportToCloud: true
-
-    - name: operatingMode
-      desired:
-        value: "AUTO"
-        metadata:
-          source: cloud
-          reason: initial-configuration
-      reportToCloud: true
-
-    - name: samplingInterval
-      desired:
-        value: "10"
-        metadata:
-          source: cloud
-          reason: initial-configuration
-      reportToCloud: true
-
-    - name: temperatureSetpoint
-      desired:
-        value: "22.0"
-        metadata:
-          source: cloud
-          reason: initial-configuration
-      reportToCloud: true
-
-    - name: fanEnabled
-      desired:
-        value: "true"
-        metadata:
-          source: cloud
-          reason: initial-configuration
-      reportToCloud: true
-
-    - name: alarmEnabled
-      desired:
-        value: "true"
-        metadata:
-          source: cloud
-          reason: initial-configuration
-      reportToCloud: true
-
+  - name: coolantTemperature
+    reportToCloud: true
+    collectCycle: 5000000000
+    reportCycle: 10000000000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: coolantTemperature
+  - name: inverterTemperature
+    reportToCloud: true
+    collectCycle: 5000000000
+    reportCycle: 10000000000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: inverterTemperature
+  - name: motorTemperature
+    reportToCloud: true
+    collectCycle: 5000000000
+    reportCycle: 10000000000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: motorTemperature
+  - name: coolantPressure
+    reportToCloud: true
+    collectCycle: 5000000000
+    reportCycle: 10000000000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: coolantPressure
+  - name: pumpSpeed
+    reportToCloud: true
+    collectCycle: 5000000000
+    reportCycle: 10000000000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: pumpSpeed
+  - name: fanDutyCycle
+    reportToCloud: true
+    collectCycle: 5000000000
+    reportCycle: 10000000000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: fanDutyCycle
+  - name: supplyVoltage
+    reportToCloud: true
+    collectCycle: 10000000000
+    reportCycle: 20000000000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: supplyVoltage
+  - name: coolantLevel
+    reportToCloud: true
+    collectCycle: 10000000000
+    reportCycle: 20000000000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: coolantLevel
+  - name: faultActive
+    reportToCloud: true
+    collectCycle: 5000000000
+    reportCycle: 10000000000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: faultActive
+  - name: faultCode
+    reportToCloud: true
+    collectCycle: 5000000000
+    reportCycle: 10000000000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: faultCode
+  - name: firmwareVersion
+    reportToCloud: true
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: firmwareVersion
+  - name: serialNumber
+    reportToCloud: true
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: serialNumber
+  - name: operatingMode
+    desired:
+      value: AUTO
+      metadata:
+        source: cloud
+        reason: initial-configuration
+    reportToCloud: true
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: operatingMode
+  - name: samplingInterval
+    desired:
+      value: '10'
+      metadata:
+        source: cloud
+        reason: initial-configuration
+    reportToCloud: true
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: samplingInterval
+  - name: targetCoolantTemperature
+    desired:
+      value: '55.0'
+      metadata:
+        source: cloud
+        reason: initial-configuration
+    reportToCloud: true
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: targetCoolantTemperature
+  - name: pumpEnabled
+    desired:
+      value: 'true'
+      metadata:
+        source: cloud
+        reason: initial-configuration
+    reportToCloud: true
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: pumpEnabled
+  - name: targetPumpSpeed
+    desired:
+      value: '1800'
+      metadata:
+        source: cloud
+        reason: initial-configuration
+    reportToCloud: true
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: targetPumpSpeed
+  - name: coolingFanEnabled
+    desired:
+      value: 'true'
+      metadata:
+        source: cloud
+        reason: initial-configuration
+    reportToCloud: true
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: coolingFanEnabled
+  - name: targetFanDutyCycle
+    desired:
+      value: '35'
+      metadata:
+        source: cloud
+        reason: initial-configuration
+    reportToCloud: true
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: targetFanDutyCycle
   methods:
-    - name: enableCooling
-      description: "Enable fan and configure temperature target"
-      propertyNames:
-        - fanEnabled
-        - temperatureSetpoint
-
-    - name: configureSampling
-      description: "Update the sampling interval"
-      propertyNames:
-        - samplingInterval
+  - name: configureCooling
+    description: Configure cooling mode, coolant target and pump/fan targets
+    propertyNames:
+    - operatingMode
+    - targetCoolantTemperature
+    - targetPumpSpeed
+    - targetFanDutyCycle
+  - name: configureSampling
+    description: Change telemetry sampling interval
+    propertyNames:
+    - samplingInterval

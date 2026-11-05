@@ -1,114 +1,134 @@
-
+# ContinuumX Playground: simulated vehicle thermal-management peripheral ECU
+# This custom virtual-ethernet protocol requires a mapper.
 apiVersion: devices.kubeedge.io/v1beta1
 kind: DeviceModel
 metadata:
-  name: environmental-controller
+  name: automotive-thermal-ecu
   namespace: default
   labels:
     app: up2date4sdv-demo
-    domain: industrial-iot
+    domain: automotive
     version: v1
   annotations:
-    description: "Virtual environmental monitoring and control device"
-    manufacturer: "Demo"
-    category: "Environmental controller"
+    description: Simulated vehicle thermal-management peripheral ECU connected to the central ECU
+    manufacturer: ContinuumX Playground
+    category: Automotive thermal-management peripheral ECU
 spec:
-  protocol: virtual
+  protocol: virtual-ethernet
   protocolConfigData:
     simulator: true
-    transport: internal
-
+    transport: simulated-ethernet
+    vehicleNetwork: Automotive Ethernet (simulated)
   properties:
-    - name: temperature
-      description: "Ambient temperature"
-      type: DOUBLE
-      accessMode: ReadOnly
-      minimum: "-40"
-      maximum: "125"
-      unit: "Celsius"
-
-    - name: humidity
-      description: "Relative humidity"
-      type: FLOAT
-      accessMode: ReadOnly
-      minimum: "0"
-      maximum: "100"
-      unit: "%"
-
-    - name: pressure
-      description: "Atmospheric pressure"
-      type: DOUBLE
-      accessMode: ReadOnly
-      minimum: "300"
-      maximum: "1200"
-      unit: "hPa"
-
-    - name: lightLevel
-      description: "Ambient illuminance"
-      type: INT
-      accessMode: ReadOnly
-      minimum: "0"
-      maximum: "100000"
-      unit: "lux"
-
-    - name: batteryLevel
-      description: "Battery state of charge"
-      type: INT
-      accessMode: ReadOnly
-      minimum: "0"
-      maximum: "100"
-      unit: "%"
-
-    - name: voltage
-      description: "Supply voltage"
-      type: FLOAT
-      accessMode: ReadOnly
-      minimum: "0"
-      maximum: "5"
-      unit: "V"
-
-    - name: online
-      description: "Device connectivity state"
-      type: BOOLEAN
-      accessMode: ReadOnly
-
-    - name: firmwareVersion
-      description: "Installed firmware version"
-      type: STRING
-      accessMode: ReadOnly
-
-    - name: serialNumber
-      description: "Hardware serial number"
-      type: STRING
-      accessMode: ReadOnly
-
-    - name: operatingMode
-      description: "AUTO, MANUAL or ECO mode"
-      type: STRING
-      accessMode: ReadWrite
-
-    - name: samplingInterval
-      description: "Sensor sampling interval"
-      type: INT
-      accessMode: ReadWrite
-      minimum: "1"
-      maximum: "3600"
-      unit: "s"
-
-    - name: temperatureSetpoint
-      description: "Target temperature"
-      type: DOUBLE
-      accessMode: ReadWrite
-      minimum: "10"
-      maximum: "40"
-      unit: "Celsius"
-
-    - name: fanEnabled
-      description: "Fan actuator enabled"
-      type: BOOLEAN
-      accessMode: ReadWrite
-
-    - name: alarmEnabled
-      description: "Alarm monitoring enabled"
-      type: BOOLEAN
-      accessMode: ReadWrite
+  - name: coolantTemperature
+    description: Coolant outlet temperature
+    type: DOUBLE
+    accessMode: ReadOnly
+    minimum: '-40'
+    maximum: '150'
+    unit: Celsius
+  - name: inverterTemperature
+    description: Traction inverter temperature
+    type: DOUBLE
+    accessMode: ReadOnly
+    minimum: '-40'
+    maximum: '180'
+    unit: Celsius
+  - name: motorTemperature
+    description: Electric traction motor temperature
+    type: DOUBLE
+    accessMode: ReadOnly
+    minimum: '-40'
+    maximum: '200'
+    unit: Celsius
+  - name: coolantPressure
+    description: Coolant circuit pressure
+    type: FLOAT
+    accessMode: ReadOnly
+    minimum: '0'
+    maximum: '6'
+    unit: bar
+  - name: pumpSpeed
+    description: Actual coolant pump rotational speed
+    type: INT
+    accessMode: ReadOnly
+    minimum: '0'
+    maximum: '6000'
+    unit: rpm
+  - name: fanDutyCycle
+    description: Actual cooling fan duty cycle
+    type: INT
+    accessMode: ReadOnly
+    minimum: '0'
+    maximum: '100'
+    unit: '%'
+  - name: supplyVoltage
+    description: Low-voltage supply measurement
+    type: FLOAT
+    accessMode: ReadOnly
+    minimum: '0'
+    maximum: '32'
+    unit: V
+  - name: coolantLevel
+    description: Coolant reservoir level
+    type: INT
+    accessMode: ReadOnly
+    minimum: '0'
+    maximum: '100'
+    unit: '%'
+  - name: faultActive
+    description: Simulated diagnostic fault indication
+    type: BOOLEAN
+    accessMode: ReadOnly
+  - name: faultCode
+    description: Simulated diagnostic trouble code or NONE
+    type: STRING
+    accessMode: ReadOnly
+  - name: firmwareVersion
+    description: Peripheral ECU firmware version
+    type: STRING
+    accessMode: ReadOnly
+  - name: serialNumber
+    description: Peripheral ECU serial number
+    type: STRING
+    accessMode: ReadOnly
+  - name: operatingMode
+    description: 'Cooling control mode: AUTO, MANUAL or ECO'
+    type: STRING
+    accessMode: ReadWrite
+  - name: samplingInterval
+    description: Simulated telemetry sampling interval
+    type: INT
+    accessMode: ReadWrite
+    minimum: '1'
+    maximum: '3600'
+    unit: s
+  - name: targetCoolantTemperature
+    description: Desired coolant temperature target
+    type: DOUBLE
+    accessMode: ReadWrite
+    minimum: '20'
+    maximum: '100'
+    unit: Celsius
+  - name: pumpEnabled
+    description: Commanded coolant pump enable state
+    type: BOOLEAN
+    accessMode: ReadWrite
+  - name: targetPumpSpeed
+    description: Requested coolant pump speed
+    type: INT
+    accessMode: ReadWrite
+    minimum: '0'
+    maximum: '6000'
+    unit: rpm
+  - name: coolingFanEnabled
+    description: Commanded cooling fan enable state
+    type: BOOLEAN
+    accessMode: ReadWrite
+  - name: targetFanDutyCycle
+    description: Requested cooling fan duty cycle
+    type: INT
+    accessMode: ReadWrite
+    minimum: '0'
+    maximum: '100'
+    unit: '%'
