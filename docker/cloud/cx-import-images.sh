@@ -14,4 +14,8 @@ for f in /opt/cx/images/*.tar; do
   echo "  ctr import $(basename "$f")"
   ctr -n k8s.io images import "$f" >/dev/null
 done
+if ! ctr -n k8s.io images ls -q | grep -q 'registry.k8s.io/pause'; then
+  echo "pause image missing after import" >&2
+  exit 1
+fi
 touch "$marker"

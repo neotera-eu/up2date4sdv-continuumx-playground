@@ -6,6 +6,13 @@
 
 set -euo pipefail
 
+instances=$(sysctl -n fs.inotify.max_user_instances)
+watches=$(sysctl -n fs.inotify.max_user_watches)
+if [[ "$instances" -ge 1024 && "$watches" -ge 1048576 && -f /etc/sysctl.d/99-continuumx-playground.conf ]]; then
+  echo "host prep already applied"
+  exit 0
+fi
+
 run() {
   if command -v run0 >/dev/null 2>&1; then
     run0 "$@"

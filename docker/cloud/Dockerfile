@@ -34,8 +34,20 @@ RUN install -m 0755 -d /etc/apt/keyrings \
     && sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml \
     && sed -i "s|BinaryName = ''|BinaryName = '/usr/local/bin/crun-wrap'|" /etc/containerd/config.toml
 
-RUN curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.32/deb/Release.key \
-      | gpg --batch --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg \
+RUN ok=0; attempt=1; \
+    while [ "$attempt" -le 5 ]; do \
+      rm -f /etc/apt/keyrings/kubernetes-apt-keyring.gpg; \
+      if curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors \
+           https://pkgs.k8s.io/core:/stable:/v1.32/deb/Release.key \
+           | gpg --batch --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg; then \
+        ok=1; \
+        break; \
+      fi; \
+      echo "kubernetes apt key attempt ${attempt} failed"; \
+      sleep $((attempt * 2)); \
+      attempt=$((attempt + 1)); \
+    done; \
+    test "$ok" = 1 \
     && echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.32/deb/ /' \
          > /etc/apt/sources.list.d/kubernetes.list \
     && apt-get update \
@@ -77,9 +89,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends skopeo \
          docker.io/neotera/iptables-manager:v1.23.0 \
        ; do \
          i=$((i+1)); \
-         printf 'seed %s\n' "$ref"; \
-         skopeo copy "docker://${ref}" \
-           "docker-archive:/opt/cx/images/$(printf '%02d' "$i").tar:${ref}"; \
+         dest=$(printf '/opt/cx/images/%02d.tar' "$i"); \
+         echo "seed ${ref}"; \
+         ok=0; \
+         attempt=1; \
+         while [ "$attempt" -le 5 ]; do \
+           rm -f "$dest"; \
+           if skopeo copy "docker://${ref}" "docker-archive:${dest}:${ref}"; then \
+             ok=1; \
+             break; \
+           fi; \
+           echo "seed ${ref} failed (attempt ${attempt})"; \
+           sleep $((attempt * 3)); \
+           attempt=$((attempt + 1)); \
+         done; \
+         test "$ok" = 1; \
        done \
     && apt-get purge -y skopeo && apt-get autoremove -y \
     && apt-get clean && rm -rf /var/lib/apt/lists/* \

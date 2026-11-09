@@ -1,0 +1,31 @@
+apiVersion: rules.kubeedge.io/v1
+kind: RuleEndpoint
+metadata:
+  name: demo-rest
+  namespace: default
+spec:
+  ruleEndpointType: rest
+  properties: {}
+---
+apiVersion: rules.kubeedge.io/v1
+kind: RuleEndpoint
+metadata:
+  name: demo-servicebus
+  namespace: default
+spec:
+  ruleEndpointType: servicebus
+  properties:
+    service_port: "3000"
+---
+apiVersion: rules.kubeedge.io/v1
+kind: Rule
+metadata:
+  name: demo-rest-to-servicebus
+  namespace: default
+spec:
+  source: demo-rest
+  sourceResource:
+    path: /demo
+  target: demo-servicebus
+  targetResource:
+    path: /api/echo

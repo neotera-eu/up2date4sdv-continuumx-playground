@@ -58,9 +58,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends skopeo \
          docker.io/library/eclipse-mosquitto:1.6.15 \
        ; do \
          i=$((i+1)); \
-         printf 'seed %s\n' "$ref"; \
-         skopeo copy "docker://${ref}" \
-           "docker-archive:/opt/cx/images/$(printf '%02d' "$i").tar:${ref}"; \
+         dest=$(printf '/opt/cx/images/%02d.tar' "$i"); \
+         echo "seed ${ref}"; \
+         ok=0; \
+         attempt=1; \
+         while [ "$attempt" -le 5 ]; do \
+           rm -f "$dest"; \
+           if skopeo copy "docker://${ref}" "docker-archive:${dest}:${ref}"; then \
+             ok=1; \
+             break; \
+           fi; \
+           echo "seed ${ref} failed (attempt ${attempt})"; \
+           sleep $((attempt * 3)); \
+           attempt=$((attempt + 1)); \
+         done; \
+         test "$ok" = 1; \
        done \
     && apt-get purge -y skopeo && apt-get autoremove -y \
     && apt-get clean && rm -rf /var/lib/apt/lists/* \

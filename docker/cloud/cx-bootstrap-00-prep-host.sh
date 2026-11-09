@@ -2,7 +2,6 @@
 # Prepare cloud host: modules, sysctl, detect IP, start containerd, import images.
 
 mkdir -p /var/lib/cx-playground /var/cx-join /root/.kube
-swapoff -a || true
 modprobe overlay || true
 modprobe br_netfilter || true
 sysctl -p /etc/sysctl.d/k8s.conf || true
