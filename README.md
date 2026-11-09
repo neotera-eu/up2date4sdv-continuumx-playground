@@ -4,6 +4,37 @@ A hands-on testbed for [ContinuumX](https://github.com/neotera-eu/continuumx), t
 
 This playground gets you to a running two-node cluster: a Kubernetes control plane running ContinuumX **CloudCore**, and an edge worker node running ContinuumX **EdgeCore**. Once it is up, you deploy a real workload (NGINX) to the edge node and verify end-to-end connectivity.
 
+## Table of Contents
+
+- [What is ContinuumX?](#what-is-continuumx)
+- [Reference Topology](#reference-topology)
+- [Getting Started](#getting-started)
+- [Option 1, Build from Scratch](#option-1-build-from-scratch)
+  - [Step 1, Prepare the CloudCore VM](#step-1-prepare-the-cloudcore-vm)
+  - [Step 2, Prepare the EdgeCore VM](#step-2-prepare-the-edgecore-vm)
+  - [Step 3, Install CloudCore and EdgeCore](#step-3-install-cloudcore-and-edgecore)
+- [Option 2, Create VMs from Pre-Built VDI Disks](#option-2-create-vms-from-pre-built-vdi-disks)
+  - [2.1 Download and Extract the VDI Disks](#21-download-and-extract-the-vdi-disks)
+  - [2.2 Create the Host-Only Network in VirtualBox](#22-create-the-host-only-network-in-virtualbox)
+  - [2.3 Create the Hoard Disks in VirtualBox](#23-create-the-hoard-disks-in-virtualbox)
+  - [2.4 Create the CloudCore VM (`u2d4sdv_cloud`) from Its VDI](#24-create-the-cloudcore-vm-u2d4sdv_cloud-from-its-vdi)
+  - [2.5 Create the EdgeCore VM (`u2d4sdv_edge`) from Its VDI](#25-create-the-edgecore-vm-u2d4sdv_edge-from-its-vdi)
+  - [2.6 VMs user](#26-vms-user)
+  - [2.7 Start Both VMs](#27-start-both-vms)
+- [Verify the Testbed](#verify-the-testbed)
+  - [Check 1, Edge Node Has Joined and Is Ready](#check-1-edge-node-has-joined-and-is-ready)
+  - [Check 2, Deploy NGINX to the Edge Node](#check-2-deploy-nginx-to-the-edge-node)
+- [Device Management and Digital Twin Playground](#device-management-and-digital-twin-playground)
+  - [1. Architecture and prerequisites](#1-architecture-and-prerequisites)
+    - [Copy the sample manifests to the CloudCore VM](#copy-the-sample-manifests-to-the-cloudcore-vm)
+  - [2. Inspect the model's supported properties](#2-inspect-the-models-supported-properties)
+  - [3. Apply the DeviceModel](#3-apply-the-devicemodel)
+  - [4. Instantiate the Device](#4-instantiate-the-device)
+  - [5. Verify the registered device configuration](#5-verify-the-registered-device-configuration)
+  - [6. Modify desired device-twin properties](#6-modify-desired-device-twin-properties)
+- [What's Next?](#whats-next)
+- [TODOS](#todos)
+
 ---
 
 ## What is ContinuumX?
@@ -289,7 +320,8 @@ Deploy a demo NGINX pod targeted to the edge node, following the [KubeEdge upstr
 # On u2deb-cloud
 kubectl apply -f nginx-edge.yaml
 ```
-> The yaml fle is available at [manifests/templates/nginx-edge.yaml](manifests/templates/nginx-edge.yaml). It is also available at the u2deb-cloud root folder.
+> The yaml fle is available at [manifests/templates/nginx-edge.yaml](manifests/templates/nginx-edge.yaml). It is also available at the u2deb-cloud root folder. If it is not present at your CloudCore node you can copy it from the aforementioned location.
+ 
 **Wait for the pod to reach Running state:**
 
 ```bash
@@ -318,6 +350,216 @@ nginx-edge-<hash>             1/1     Running   u2deb-edge
 
 ```bash
 kubectl delete -f nginx-edge.yaml
+```
+
+---
+
+## Device Management and Digital Twin Playground
+
+This exercise models a **simulated automotive thermal-management peripheral ECU** attached to the vehicle's **central ECU**. In this playground, the **edge worker (`u2deb-edge`) represents the central ECU**, hosting ContinuumX EdgeCore; the peripheral thermal-management ECU is represented by a `Device` resource. The cloud VM hosts Kubernetes and ContinuumX CloudCore. The exercise uses the KubeEdge-compatible `devices.kubeedge.io/v1beta1` API.
+
+> **Scope:** Steps 1-6 demonstrate model registration, device instantiation and cloud-side **desired-state** changes. No vehicle hardware, physical automotive Ethernet device, sensor measurements or actuator operations are involved.
+
+### 1. Architecture and prerequisites
+
+`DeviceModel` defines the properties and capabilities of the **thermal-management peripheral ECU**. Its `Device` instance is assigned to `u2deb-edge`, the simulated **central ECU**. CloudCore and EdgeCore provide the cloud and edge components of the device-twin infrastructure. The desired state is configured from the cloud; reported state requires a mapper.
+
+A **device mapper** is an edge-side software component that translates between ContinuumX's device-management/twin interfaces and a real or simulated peripheral ECU. It receives configuration requests, reads measurements and publishes reported property values. **No mapper is installed in Steps 1-6.** The custom `virtual-ethernet` protocol identifier describes a simulated automotive Ethernet connection between the central ECU and peripheral ECU. It is a placeholder for Step 7: these manifests do **not** establish a network socket, communicate with a physical device, or implement an automotive Ethernet application protocol.
+
+```mermaid
+graph TB
+    User["User: kubectl"]
+    subgraph Cloud
+        Model["DeviceModel: automotive-thermal-ecu"]
+        Device["Device: automotive-thermal-ecu-001"]
+        CloudTwin["Cloud twin state"]
+        Status["DeviceStatus: runtime state"]
+        Model -->|Defines properties| Device
+        Device -->|Desired values| CloudTwin
+        CloudTwin -.-> Status
+    end
+    subgraph CentralECU
+        EdgeTwin["EdgeCore: local device twin"]
+        Mapper["Virtual mapper: future Step 7"]
+        Peripheral["Simulated thermal-management peripheral ECU"]
+        EdgeTwin -.-> Mapper
+        Mapper -.->|Simulated automotive Ethernet| Peripheral
+    end
+    User -->|Apply and patch| Device
+    User -.->|Inspect| Status
+    CloudTwin -->|Desired state sync| EdgeTwin
+    EdgeTwin -.->|Reported state sync: future| CloudTwin
+    classDef resource fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+    classDef twin fill:#d1fae5,stroke:#059669,color:#065f46
+    classDef future fill:#f3f4f6,stroke:#9ca3af,color:#6b7280
+    class Model,Device,Status resource
+    class CloudTwin,EdgeTwin twin
+    class Mapper,Peripheral future
+```
+
+From the **CloudCore VM** (`u2d4sdv_cloud`), where `kubectl` is configured, verify the cluster and APIs:
+
+```bash
+kubectl get nodes -o wide
+kubectl api-resources --api-group=devices.kubeedge.io
+kubectl get crd devicemodels.devices.kubeedge.io devices.devices.kubeedge.io
+```
+
+The cloud and edge nodes should be `Ready`. The following examples use the `default` namespace.
+
+#### Copy the sample manifests to the CloudCore VM
+
+The sample files are in [`manifests/samples/devices/device-model.yaml`](manifests/samples/devices/device-model.yaml) and [`manifests/samples/devices/device-instance.yaml`](manifests/samples/devices/device-instance.yaml). Run **only the SSH/SCP commands below on your host computer**, from the playground repository root:
+
+```bash
+# HOST: copy the two manifests to the Kubernetes control-plane VM
+ssh user@192.168.56.10 'mkdir -p ~/continuumx-device-demo'
+scp manifests/samples/devices/device-model.yaml \
+    manifests/samples/devices/device-instance.yaml \
+    user@192.168.56.10:~/continuumx-device-demo/
+ssh user@192.168.56.10
+```
+
+From this point onward, run all commands **inside the CloudCore VM**:
+
+```bash
+# CLOUD VM
+cd ~/continuumx-device-demo
+ls -l device-model.yaml device-instance.yaml
+kubectl get nodes -o wide
+```
+
+If `kubectl` is only configured for the administrator, use the properly configured shell and return to `/home/user/continuumx-device-demo` before continuing. Replace `192.168.56.10` with the reachable cloud VM address if needed.
+
+### 2. Inspect the model's supported properties
+
+The model contains **19 automotive properties**: 12 read-only telemetry/identity fields and seven writable configuration/actuator targets. The following are **simulated values**, not real measurements or safety-rated commands.
+
+| Property | Type | Access | Description / unit |
+|---|---|---|---|
+| `coolantTemperature` | `DOUBLE` | `ReadOnly` | Coolant outlet temperature (Celsius, -40 to 150) |
+| `inverterTemperature` | `DOUBLE` | `ReadOnly` | Traction inverter temperature (Celsius, -40 to 180) |
+| `motorTemperature` | `DOUBLE` | `ReadOnly` | Electric traction motor temperature (Celsius, -40 to 200) |
+| `coolantPressure` | `FLOAT` | `ReadOnly` | Coolant circuit pressure (bar, 0 to 6) |
+| `pumpSpeed` | `INT` | `ReadOnly` | Actual coolant pump rotational speed (rpm, 0 to 6000) |
+| `fanDutyCycle` | `INT` | `ReadOnly` | Actual cooling fan duty cycle (%, 0 to 100) |
+| `supplyVoltage` | `FLOAT` | `ReadOnly` | Low-voltage supply measurement (V, 0 to 32) |
+| `coolantLevel` | `INT` | `ReadOnly` | Coolant reservoir level (%, 0 to 100) |
+| `faultActive` | `BOOLEAN` | `ReadOnly` | Simulated diagnostic fault indication |
+| `faultCode` | `STRING` | `ReadOnly` | Simulated diagnostic trouble code or NONE |
+| `firmwareVersion` | `STRING` | `ReadOnly` | Peripheral ECU firmware version |
+| `serialNumber` | `STRING` | `ReadOnly` | Peripheral ECU serial number |
+| `operatingMode` | `STRING` | `ReadWrite` | Cooling control mode: AUTO, MANUAL or ECO |
+| `samplingInterval` | `INT` | `ReadWrite` | Simulated telemetry sampling interval (s, 1 to 3600) |
+| `targetCoolantTemperature` | `DOUBLE` | `ReadWrite` | Desired coolant temperature target (Celsius, 20 to 100) |
+| `pumpEnabled` | `BOOLEAN` | `ReadWrite` | Commanded coolant pump enable state |
+| `targetPumpSpeed` | `INT` | `ReadWrite` | Requested coolant pump speed (rpm, 0 to 6000) |
+| `coolingFanEnabled` | `BOOLEAN` | `ReadWrite` | Commanded cooling fan enable state |
+| `targetFanDutyCycle` | `INT` | `ReadWrite` | Requested cooling fan duty cycle (%, 0 to 100) |
+
+The distinction between **actual** values (e.g., `pumpSpeed`, `fanDutyCycle`) and **commanded** values (e.g., `targetPumpSpeed`, `targetFanDutyCycle`) enables explicit desired-vs-reported testing. Property ranges and units are model metadata; an eventual mapper must validate and enforce behavior.
+
+### 3. Apply the DeviceModel
+
+The model YAML is [`manifests/samples/devices/device-model.yaml`](manifests/samples/devices/device-model.yaml). On the **CloudCore VM**, from `~/continuumx-device-demo`:
+
+```bash
+kubectl apply --dry-run=server -f device-model.yaml
+kubectl apply -f device-model.yaml
+kubectl get devicemodels.devices.kubeedge.io -n default
+kubectl describe devicemodel automotive-thermal-ecu -n default
+```
+
+The `virtual-ethernet` protocol is **custom**, not a built-in automotive Ethernet driver or communication stack. Its configuration describes the intended simulated Ethernet link; an application-layer protocol and mapper will be implemented and verified in Step 7.
+
+### 4. Instantiate the Device
+
+The instance YAML is [`manifests/samples/devices/device-instance.yaml`](manifests/samples/devices/device-instance.yaml). It creates `automotive-thermal-ecu-001` and assigns the peripheral ECU to the central ECU/edge node (`spec.nodeName: u2deb-edge`). Confirm that node name with `kubectl get nodes -o wide` and change it in the local YAML if necessary.
+
+The instance starts with these seven desired values:
+
+| Writable property | Initial desired value |
+|---|---|
+| `operatingMode` | `AUTO` |
+| `samplingInterval` | `10` |
+| `targetCoolantTemperature` | `55.0` |
+| `pumpEnabled` | `true` |
+| `targetPumpSpeed` | `1800` |
+| `coolingFanEnabled` | `true` |
+| `targetFanDutyCycle` | `35` |
+
+The instance also specifies property collection/reporting cycles, custom protocol visitors and illustrative `configureCooling` and `configureSampling` method descriptions. Methods do not execute without mapper support.
+
+```bash
+# CLOUD VM
+kubectl apply --dry-run=server -f device-instance.yaml
+kubectl apply -f device-instance.yaml
+kubectl get devices.devices.kubeedge.io -n default -o wide
+kubectl get device automotive-thermal-ecu-001 -n default -o yaml
+```
+
+Inspect the accepted property values; the API server may prune fields not supported by the installed CRD:
+
+```bash
+kubectl get device automotive-thermal-ecu-001 -n default \
+  -o jsonpath='{.spec.nodeName}{"\n"}{range .spec.properties[*]}{.name}{" => "}{.desired.value}{"\n"}{end}'
+```
+
+### 5. Verify the registered device configuration
+
+```bash
+# CLOUD VM
+kubectl get devicemodel automotive-thermal-ecu -n default -o yaml
+kubectl get device automotive-thermal-ecu-001 -n default -o yaml
+kubectl get crd devicestatuses.devices.kubeedge.io
+kubectl get devicestatuses.devices.kubeedge.io -n default -o yaml
+```
+
+Check the `Device` resource's seven desired values and correct edge-node assignment. The `DeviceStatus` resource, when present, represents runtime state; absence of reported values is **expected without a mapper**. Successfully applying a device is **not proof** of live measurement or cloud-edge twin convergence.
+
+### 6. Modify desired device-twin properties
+
+From the **CloudCore VM**, change the cooling target from `55.0` to `60.0` °C:
+
+```bash
+kubectl patch device automotive-thermal-ecu-001 -n default \
+  --type=json \
+  -p='[{"op":"replace","path":"/spec/properties/14/desired/value","value":"60.0"}]'
+
+kubectl get device automotive-thermal-ecu-001 -n default \
+  -o jsonpath='{.spec.properties[14].name}{": "}{.spec.properties[14].desired.value}{"\n"}'
+```
+
+Expected: `targetCoolantTemperature: 60.0`. Index `14` refers to the **fifteenth property** in the supplied YAML. These positional JSON patches must be revised if the properties are reordered.
+
+As another example, select `ECO` mode, sample every 30 seconds and request lower pump/fan targets:
+
+```bash
+kubectl patch device automotive-thermal-ecu-001 -n default \
+  --type=json \
+  -p='[
+    {"op":"replace","path":"/spec/properties/12/desired/value","value":"ECO"},
+    {"op":"replace","path":"/spec/properties/13/desired/value","value":"30"},
+    {"op":"replace","path":"/spec/properties/16/desired/value","value":"1200"},
+    {"op":"replace","path":"/spec/properties/18/desired/value","value":"20"}
+  ]'
+
+kubectl get device automotive-thermal-ecu-001 -n default -o yaml
+```
+
+These commands modify **cloud-side desired values only**. Without the mapper, there is no simulated peripheral ECU consuming commands or publishing actual readings. Step 7 will validate cloud-to-edge desired-state propagation, edge-side application and reported-state synchronization separately.
+
+**Optional reset** (reapply the original sample):
+
+```bash
+kubectl apply -f device-instance.yaml
+```
+
+**Optional cleanup** (delete the instance before its model):
+
+```bash
+kubectl delete -f device-instance.yaml
+kubectl delete -f device-model.yaml
 ```
 
 ---

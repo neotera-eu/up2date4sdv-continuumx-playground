@@ -1,0 +1,232 @@
+# ContinuumX Playground: simulated vehicle thermal-management peripheral ECU
+# This custom virtual-ethernet protocol requires a mapper
+apiVersion: devices.kubeedge.io/v1beta1
+kind: Device
+metadata:
+  name: automotive-thermal-ecu-001
+  namespace: default
+  labels:
+    app: up2date4sdv-demo
+    device-type: automotive-thermal-ecu
+    vehicle-domain: thermal-management
+  annotations:
+    description: Simulated vehicle thermal-management peripheral ECU connected to the central ECU
+    asset-id: THERM-ECU-001
+    vehicle-subsystem: cooling
+    network-interface: Simulated automotive Ethernet link; no physical peripheral is connected
+spec:
+  deviceModelRef:
+    name: automotive-thermal-ecu
+  nodeName: u2deb-edge
+  protocol:
+    protocolName: virtual-ethernet
+    configData:
+      deviceId: THERM-ECU-001
+      simulator: true
+      endpoint: virtual-ethernet://automotive-thermal-ecu-001
+      updateIntervalSeconds: 10
+      transport: simulated-ethernet
+  stateReport:
+    reportToCloud: true
+    reportCycle: 10000000000
+  properties:
+  - name: coolantTemperature
+    reportToCloud: true
+    collectCycle: 5000000000
+    reportCycle: 10000000000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: coolantTemperature
+  - name: inverterTemperature
+    reportToCloud: true
+    collectCycle: 5000000000
+    reportCycle: 10000000000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: inverterTemperature
+  - name: motorTemperature
+    reportToCloud: true
+    collectCycle: 5000000000
+    reportCycle: 10000000000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: motorTemperature
+  - name: coolantPressure
+    reportToCloud: true
+    collectCycle: 5000000000
+    reportCycle: 10000000000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: coolantPressure
+  - name: pumpSpeed
+    reportToCloud: true
+    collectCycle: 5000000000
+    reportCycle: 10000000000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: pumpSpeed
+  - name: fanDutyCycle
+    reportToCloud: true
+    collectCycle: 5000000000
+    reportCycle: 10000000000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: fanDutyCycle
+  - name: supplyVoltage
+    reportToCloud: true
+    collectCycle: 10000000000
+    reportCycle: 20000000000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: supplyVoltage
+  - name: coolantLevel
+    reportToCloud: true
+    collectCycle: 10000000000
+    reportCycle: 20000000000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: coolantLevel
+  - name: faultActive
+    reportToCloud: true
+    collectCycle: 5000000000
+    reportCycle: 10000000000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: faultActive
+  - name: faultCode
+    reportToCloud: true
+    collectCycle: 5000000000
+    reportCycle: 10000000000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: faultCode
+  - name: firmwareVersion
+    reportToCloud: true
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: firmwareVersion
+  - name: serialNumber
+    reportToCloud: true
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: serialNumber
+  - name: operatingMode
+    desired:
+      value: AUTO
+      metadata:
+        source: cloud
+        reason: initial-configuration
+    reportToCloud: true
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: operatingMode
+  - name: samplingInterval
+    desired:
+      value: '10'
+      metadata:
+        source: cloud
+        reason: initial-configuration
+    reportToCloud: true
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: samplingInterval
+  - name: targetCoolantTemperature
+    desired:
+      value: '55.0'
+      metadata:
+        source: cloud
+        reason: initial-configuration
+    reportToCloud: true
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: targetCoolantTemperature
+  - name: pumpEnabled
+    desired:
+      value: 'true'
+      metadata:
+        source: cloud
+        reason: initial-configuration
+    reportToCloud: true
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: pumpEnabled
+  - name: targetPumpSpeed
+    desired:
+      value: '1800'
+      metadata:
+        source: cloud
+        reason: initial-configuration
+    reportToCloud: true
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: targetPumpSpeed
+  - name: coolingFanEnabled
+    desired:
+      value: 'true'
+      metadata:
+        source: cloud
+        reason: initial-configuration
+    reportToCloud: true
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: coolingFanEnabled
+  - name: targetFanDutyCycle
+    desired:
+      value: '35'
+      metadata:
+        source: cloud
+        reason: initial-configuration
+    reportToCloud: true
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: targetFanDutyCycle
+  methods:
+  - name: configureCooling
+    description: Configure cooling mode, coolant target and pump/fan targets
+    propertyNames:
+    - operatingMode
+    - targetCoolantTemperature
+    - targetPumpSpeed
+    - targetFanDutyCycle
+  - name: configureSampling
+    description: Change telemetry sampling interval
+    propertyNames:
+    - samplingInterval

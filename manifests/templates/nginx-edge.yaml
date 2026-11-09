@@ -18,13 +18,19 @@ spec:
       - name: nginx
         image: nginx:alpine
         ports:
+<<<<<<< HEAD
         - name: http
           containerPort: 80
           hostPort: 80
+=======
+        - containerPort: 80
+          protocol: TCP
+>>>>>>> a173a98b48f8409a4b8e9996aee1b2a544d85f35
       tolerations:
       - key: node-role.kubernetes.io/edge
         operator: Exists
         effect: NoSchedule
+<<<<<<< HEAD
 ---
 apiVersion: v1
 kind: Service
@@ -40,3 +46,5 @@ spec:
     targetPort: 80
     nodePort: 30080
 
+=======
+>>>>>>> a173a98b48f8409a4b8e9996aee1b2a544d85f35
