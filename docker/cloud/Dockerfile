@@ -109,8 +109,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends skopeo \
     && apt-get clean && rm -rf /var/lib/apt/lists/* \
     && du -sh /opt/cx/images
 
-RUN mkdir -p /etc/modules-load.d /etc/sysctl.d \
-    && printf '%s\n' overlay br_netfilter > /etc/modules-load.d/k8s.conf \
+# Do not ask systemd to load kernel modules inside the container.
+# Rootless Podman/Docker cannot modprobe the host kernel (EPERM);
+# host-prep.sh loads overlay + br_netfilter on the real host instead.
+RUN mkdir -p /etc/sysctl.d \
     && printf '%s\n' \
          'net.bridge.bridge-nf-call-iptables = 1' \
          'net.bridge.bridge-nf-call-ip6tables = 1' \
@@ -138,7 +140,8 @@ RUN chmod 755 /usr/local/sbin/cx-bootstrap*.sh /usr/local/sbin/cx-import-images.
     && printf '%s\n' 'PasswordAuthentication yes' > /etc/ssh/sshd_config.d/password.conf \
     && ssh-keygen -A \
     && for unit in systemd-udevd.service systemd-udevd-kernel.socket systemd-udevd-control.socket \
-         systemd-networkd.service systemd-resolved.service console-getty.service; do \
+         systemd-networkd.service systemd-resolved.service console-getty.service \
+         systemd-modules-load.service; do \
          ln -sf /dev/null "/etc/systemd/system/${unit}"; \
        done \
     && rm -f /etc/machine-id /var/lib/dbus/machine-id

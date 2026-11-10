@@ -21,11 +21,14 @@ ARGS := $(filter-out build run down delete prune info help,$(MAKECMDGOALS))
 help:
 	@echo "Targets:"
 	@echo "  make build [service...]   Build images"
-	@echo "  make run [service...]     Start stack (full run prints info)"
+	@echo "  make run [service...]     Host prep + start stack (full run prints info)"
 	@echo "  make down                 Stop containers"
 	@echo "  make delete               Remove containers (keep volumes/images)"
 	@echo "  make prune                Remove containers + volumes + project images"
 	@echo "  make info                 Print connection info"
+	@echo ""
+	@echo "Host prep (automatic on make run) loads overlay + br_netfilter and"
+	@echo "sets bridge/inotify sysctls. Needs sudo or run0 once."
 	@echo ""
 	@echo "Services: $(SERVICES)"
 

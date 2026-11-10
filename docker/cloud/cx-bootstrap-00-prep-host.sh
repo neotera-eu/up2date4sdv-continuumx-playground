@@ -1,10 +1,21 @@
 #!/bin/bash
-# Prepare cloud host: modules, sysctl, detect IP, start containerd, import images.
+# Prepare cloud host: sysctl, detect IP, start containerd, import images.
+#
+# Kernel modules (overlay, br_netfilter) must already be loaded on the
+# real host by docker/host-prep.sh - containers cannot modprobe under
+# rootless Podman/Docker.
 
 mkdir -p /var/lib/cx-playground /var/cx-join /root/.kube
-modprobe overlay || true
-modprobe br_netfilter || true
-sysctl -p /etc/sysctl.d/k8s.conf || true
+
+# Best-effort only; host-prep.sh is the real loader.
+modprobe overlay 2>/dev/null || true
+modprobe br_netfilter 2>/dev/null || true
+sysctl -p /etc/sysctl.d/k8s.conf 2>/dev/null || true
+
+if [[ ! -d /sys/module/br_netfilter ]] && [[ ! -e /proc/sys/net/bridge/bridge-nf-call-iptables ]]; then
+  echo "warning: br_netfilter is not available in this container."
+  echo "  run 'make run' (or docker/host-prep.sh) on the host first."
+fi
 
 CX_HOST_IP=$(ip -4 -o addr show scope global | awk '{print $4}' | cut -d/ -f1 | head -1)
 [[ -n "$CX_HOST_IP" ]]

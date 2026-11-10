@@ -62,6 +62,8 @@ services:
       - cx-cloud-kubernetes:/etc/kubernetes
       - cx-cloud-playground:/var/lib/cx-playground
       - /lib/modules:/lib/modules:ro
+    # ip_forward + bridge-nf are also set on the host by host-prep.sh
+    # (required for rootless; in-container sysctls alone are not enough).
     sysctls:
       - net.ipv4.ip_forward=1
     healthcheck:
