@@ -5,18 +5,36 @@
 # user namespaces -> modprobe returns "Operation not permitted").
 # Load them on the real host here so cloud/edge networking works on any
 # Linux distro (Fedora, Debian, Ubuntu, ...).
+#
+# Also checks /etc/hosts for names that collide with this stack. If found,
+# asks before backing up to /etc/hosts.backup and writing a clean file.
+# Restore later with: make revert
 
 set -euo pipefail
 
 need_instances=1024
 need_watches=1048576
+HOSTS_FILE=/etc/hosts
+HOSTS_BACKUP=/etc/hosts.backup
+
+# Hostnames this playground (and the VM docs) use. Stale mappings here
+# (e.g. old 192.168.56.x VirtualBox entries) break resolution.
+CONFLICT_NAMES=(
+  cloud
+  mqtt-broker
+  u2deb-cloud
+  u2deb-edge
+  u2deb-cloud.local
+  u2deb-edge.local
+  u2deb-cloud.lan
+  u2deb-edge.lan
+)
 
 run() {
   if [[ "$(id -u)" -eq 0 ]]; then
     "$@"
     return
   fi
-  # Prefer passwordless sudo, then interactive sudo, then run0 (Fedora).
   if command -v sudo >/dev/null 2>&1; then
     if sudo -n true 2>/dev/null; then
       sudo "$@"
@@ -33,6 +51,98 @@ run() {
   fi
   echo "error: need root, sudo, or run0 to prepare the host" >&2
   exit 1
+}
+
+ask_yes_no() {
+  local prompt="$1"
+  local reply=
+  if [[ ! -t 0 ]] && [[ -r /dev/tty ]]; then
+    printf '%s' "$prompt" >/dev/tty
+    read -r reply </dev/tty || true
+  else
+    printf '%s' "$prompt"
+    read -r reply || true
+  fi
+  [[ "$reply" == [yY] || "$reply" == [yY][eE][sS] ]]
+}
+
+find_host_conflicts() {
+  [[ -r "$HOSTS_FILE" ]] || return 0
+  # Whole-token match on hostnames (field 2+), ignore comments/blank.
+  CONFLICT_NAMES_CSV="$(IFS=,; echo "${CONFLICT_NAMES[*]}")" \
+  awk -v names="$CONFLICT_NAMES_CSV" '
+    BEGIN {
+      n = split(names, want, ",")
+      for (i = 1; i <= n; i++) bad[want[i]] = 1
+    }
+    /^[[:space:]]*#/ { next }
+    NF == 0 { next }
+    {
+      for (i = 2; i <= NF; i++) {
+        gsub(/\r/, "", $i)
+        if ($i ~ /^#/) break
+        if ($i in bad) { print; next }
+      }
+    }
+  ' "$HOSTS_FILE"
+}
+
+write_clean_hosts() {
+  local host short
+  host="$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo localhost)"
+  short="$(hostname -s 2>/dev/null || echo localhost)"
+
+  # Minimal portable hosts file. Keep the machine hostname on 127.0.1.1
+  # (Debian/Ubuntu style) when it is not just "localhost".
+  {
+    echo "# Written by continuumx-playground host-prep.sh"
+    echo "# Previous file saved as ${HOSTS_BACKUP}"
+    echo "127.0.0.1 localhost"
+    echo "::1 localhost ip6-localhost ip6-loopback"
+    echo "ff02::1 ip6-allnodes"
+    echo "ff02::2 ip6-allrouters"
+    if [[ -n "$short" && "$short" != localhost ]]; then
+      if [[ "$host" != "$short" && "$host" != localhost ]]; then
+        echo "127.0.1.1 ${host} ${short}"
+      else
+        echo "127.0.1.1 ${short}"
+      fi
+    fi
+  } | run tee "$HOSTS_FILE" >/dev/null
+}
+
+ensure_hosts_ok() {
+  local conflicts
+  conflicts="$(find_host_conflicts || true)"
+  if [[ -z "$conflicts" ]]; then
+    echo "/etc/hosts: no playground name conflicts"
+    return 0
+  fi
+
+  echo ""
+  echo "WARNING: /etc/hosts has entries that can break this playground"
+  echo "(stale cloud / edge / mqtt / VirtualBox names):"
+  echo "--------------------------------------------------------------"
+  printf '%s\n' "$conflicts"
+  echo "--------------------------------------------------------------"
+  echo "Recommended: backup to ${HOSTS_BACKUP} and replace with a clean file."
+  echo "You can restore later with: make revert"
+  echo ""
+
+  if ! ask_yes_no "Backup /etc/hosts and replace with a clean version? [y/N] "; then
+    echo "error: refused hosts cleanup; fix /etc/hosts or re-run make run" >&2
+    exit 1
+  fi
+
+  if [[ -e "$HOSTS_BACKUP" ]]; then
+    echo "keeping existing backup ${HOSTS_BACKUP} (not overwritten)"
+  else
+    run cp -a "$HOSTS_FILE" "$HOSTS_BACKUP"
+    echo "backed up ${HOSTS_FILE} -> ${HOSTS_BACKUP}"
+  fi
+
+  write_clean_hosts
+  echo "wrote clean ${HOSTS_FILE}"
 }
 
 module_loaded() {
@@ -58,6 +168,8 @@ ensure_module() {
   fi
   echo "module ${name}: loaded"
 }
+
+ensure_hosts_ok
 
 # overlay: container storage; br_netfilter: kube-proxy / CNI iptables on bridges
 ensure_module overlay
