@@ -1,5 +1,5 @@
 # ContinuumX Playground: simulated vehicle thermal-management peripheral ECU
-# This custom virtual-ethernet protocol requires a mapper.
+# The custom virtual-ethernet protocol is served by the companion simulator mapper.
 apiVersion: devices.kubeedge.io/v1beta1
 kind: DeviceModel
 metadata:

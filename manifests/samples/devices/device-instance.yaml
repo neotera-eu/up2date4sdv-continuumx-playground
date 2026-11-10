@@ -1,5 +1,6 @@
-# ContinuumX Playground: simulated vehicle thermal-management peripheral ECU
-# This custom virtual-ethernet protocol requires a mapper
+# Reference manifest for a fresh deployment. For an existing Device, use the patch helper
+# to preserve its current desired values (for example targetCoolantTemperature=63.0).
+# All collectCycle/reportCycle values are MILLISECONDS.
 apiVersion: devices.kubeedge.io/v1beta1
 kind: Device
 metadata:
@@ -10,10 +11,12 @@ metadata:
     device-type: automotive-thermal-ecu
     vehicle-domain: thermal-management
   annotations:
-    description: Simulated vehicle thermal-management peripheral ECU connected to the central ECU
+    description: Simulated vehicle thermal-management peripheral ECU connected to
+      the central ECU
     asset-id: THERM-ECU-001
     vehicle-subsystem: cooling
-    network-interface: Simulated automotive Ethernet link; no physical peripheral is connected
+    network-interface: Simulated automotive Ethernet link; no physical peripheral
+      is connected
 spec:
   deviceModelRef:
     name: automotive-thermal-ecu
@@ -28,12 +31,12 @@ spec:
       transport: simulated-ethernet
   stateReport:
     reportToCloud: true
-    reportCycle: 10000000000
+    reportCycle: 60000
   properties:
   - name: coolantTemperature
     reportToCloud: true
-    collectCycle: 5000000000
-    reportCycle: 10000000000
+    collectCycle: 10000
+    reportCycle: 10000
     visitors:
       protocolName: virtual-ethernet
       configData:
@@ -41,8 +44,8 @@ spec:
         signal: coolantTemperature
   - name: inverterTemperature
     reportToCloud: true
-    collectCycle: 5000000000
-    reportCycle: 10000000000
+    collectCycle: 10000
+    reportCycle: 10000
     visitors:
       protocolName: virtual-ethernet
       configData:
@@ -50,8 +53,8 @@ spec:
         signal: inverterTemperature
   - name: motorTemperature
     reportToCloud: true
-    collectCycle: 5000000000
-    reportCycle: 10000000000
+    collectCycle: 10000
+    reportCycle: 10000
     visitors:
       protocolName: virtual-ethernet
       configData:
@@ -59,8 +62,8 @@ spec:
         signal: motorTemperature
   - name: coolantPressure
     reportToCloud: true
-    collectCycle: 5000000000
-    reportCycle: 10000000000
+    collectCycle: 10000
+    reportCycle: 10000
     visitors:
       protocolName: virtual-ethernet
       configData:
@@ -68,8 +71,8 @@ spec:
         signal: coolantPressure
   - name: pumpSpeed
     reportToCloud: true
-    collectCycle: 5000000000
-    reportCycle: 10000000000
+    collectCycle: 10000
+    reportCycle: 10000
     visitors:
       protocolName: virtual-ethernet
       configData:
@@ -77,8 +80,8 @@ spec:
         signal: pumpSpeed
   - name: fanDutyCycle
     reportToCloud: true
-    collectCycle: 5000000000
-    reportCycle: 10000000000
+    collectCycle: 10000
+    reportCycle: 10000
     visitors:
       protocolName: virtual-ethernet
       configData:
@@ -86,8 +89,8 @@ spec:
         signal: fanDutyCycle
   - name: supplyVoltage
     reportToCloud: true
-    collectCycle: 10000000000
-    reportCycle: 20000000000
+    collectCycle: 20000
+    reportCycle: 20000
     visitors:
       protocolName: virtual-ethernet
       configData:
@@ -95,8 +98,8 @@ spec:
         signal: supplyVoltage
   - name: coolantLevel
     reportToCloud: true
-    collectCycle: 10000000000
-    reportCycle: 20000000000
+    collectCycle: 20000
+    reportCycle: 20000
     visitors:
       protocolName: virtual-ethernet
       configData:
@@ -104,8 +107,8 @@ spec:
         signal: coolantLevel
   - name: faultActive
     reportToCloud: true
-    collectCycle: 5000000000
-    reportCycle: 10000000000
+    collectCycle: 10000
+    reportCycle: 10000
     visitors:
       protocolName: virtual-ethernet
       configData:
@@ -113,8 +116,8 @@ spec:
         signal: faultActive
   - name: faultCode
     reportToCloud: true
-    collectCycle: 5000000000
-    reportCycle: 10000000000
+    collectCycle: 10000
+    reportCycle: 10000
     visitors:
       protocolName: virtual-ethernet
       configData:
@@ -127,6 +130,8 @@ spec:
       configData:
         source: simulator
         signal: firmwareVersion
+    collectCycle: 60000
+    reportCycle: 60000
   - name: serialNumber
     reportToCloud: true
     visitors:
@@ -134,6 +139,8 @@ spec:
       configData:
         source: simulator
         signal: serialNumber
+    collectCycle: 60000
+    reportCycle: 60000
   - name: operatingMode
     desired:
       value: AUTO
@@ -146,6 +153,8 @@ spec:
       configData:
         source: simulator
         signal: operatingMode
+    collectCycle: 30000
+    reportCycle: 30000
   - name: samplingInterval
     desired:
       value: '10'
@@ -158,6 +167,8 @@ spec:
       configData:
         source: simulator
         signal: samplingInterval
+    collectCycle: 30000
+    reportCycle: 30000
   - name: targetCoolantTemperature
     desired:
       value: '55.0'
@@ -170,6 +181,8 @@ spec:
       configData:
         source: simulator
         signal: targetCoolantTemperature
+    collectCycle: 20000
+    reportCycle: 20000
   - name: pumpEnabled
     desired:
       value: 'true'
@@ -182,6 +195,8 @@ spec:
       configData:
         source: simulator
         signal: pumpEnabled
+    collectCycle: 30000
+    reportCycle: 30000
   - name: targetPumpSpeed
     desired:
       value: '1800'
@@ -194,6 +209,8 @@ spec:
       configData:
         source: simulator
         signal: targetPumpSpeed
+    collectCycle: 30000
+    reportCycle: 30000
   - name: coolingFanEnabled
     desired:
       value: 'true'
@@ -206,6 +223,8 @@ spec:
       configData:
         source: simulator
         signal: coolingFanEnabled
+    collectCycle: 30000
+    reportCycle: 30000
   - name: targetFanDutyCycle
     desired:
       value: '35'
@@ -218,6 +237,8 @@ spec:
       configData:
         source: simulator
         signal: targetFanDutyCycle
+    collectCycle: 30000
+    reportCycle: 30000
   methods:
   - name: configureCooling
     description: Configure cooling mode, coolant target and pump/fan targets
