@@ -1,76 +1,50 @@
 # ContinuumX Playground
 
-A hands-on testbed for [ContinuumX](https://github.com/neotera-eu/continuumx), the Neotera distribution of [KubeEdge](https://github.com/kubeedge/kubeedge).
+**Run cloud-to-edge workloads and manage a simulated automotive ECU with ContinuumX.**
 
-This playground gets you to a running two-node cluster: a Kubernetes control plane running ContinuumX **CloudCore**, and an edge worker node running ContinuumX **EdgeCore**. Once it is up, you deploy a real workload (NGINX) to the edge node and verify end-to-end connectivity.
+[ContinuumX](https://github.com/neotera-eu/continuumx) is Neotera's KubeEdge-based platform for Kubernetes-compatible orchestration and device management across cloud and edge infrastructure. This playground provides a two-node testbed and two examples:
 
-## Table of Contents
+- **Edge workload:** deploy NGINX to a ContinuumX edge node.
+- **Automotive device twin:** control and observe a simulated thermal-management peripheral ECU through the **Virtual Ethernet Mapper**.
 
-- [What is ContinuumX?](#what-is-continuumx)
-- [Reference Topology](#reference-topology)
-- [Getting Started](#getting-started)
-- [Option 1, Build from Scratch](#option-1-build-from-scratch)
-  - [Step 1, Prepare the CloudCore VM](#step-1-prepare-the-cloudcore-vm)
-  - [Step 2, Prepare the EdgeCore VM](#step-2-prepare-the-edgecore-vm)
-  - [Step 3, Install CloudCore and EdgeCore](#step-3-install-cloudcore-and-edgecore)
-- [Option 2, Create VMs from Pre-Built VDI Disks](#option-2-create-vms-from-pre-built-vdi-disks)
-  - [2.1 Download and Extract the VDI Disks](#21-download-and-extract-the-vdi-disks)
-  - [2.2 Create the Host-Only Network in VirtualBox](#22-create-the-host-only-network-in-virtualbox)
-  - [2.3 Create the Hoard Disks in VirtualBox](#23-create-the-hoard-disks-in-virtualbox)
-  - [2.4 Create the CloudCore VM (`u2d4sdv_cloud`) from Its VDI](#24-create-the-cloudcore-vm-u2d4sdv_cloud-from-its-vdi)
-  - [2.5 Create the EdgeCore VM (`u2d4sdv_edge`) from Its VDI](#25-create-the-edgecore-vm-u2d4sdv_edge-from-its-vdi)
-  - [2.6 VMs user](#26-vms-user)
-  - [2.7 Start Both VMs](#27-start-both-vms)
-- [Verify the Testbed](#verify-the-testbed)
-  - [Check 1, Edge Node Has Joined and Is Ready](#check-1-edge-node-has-joined-and-is-ready)
-  - [Check 2, Deploy NGINX to the Edge Node](#check-2-deploy-nginx-to-the-edge-node)
-- [Device Management and Digital Twin Playground](#device-management-and-digital-twin-playground)
-  - [1. Architecture and prerequisites](#1-architecture-and-prerequisites)
-    - [Copy the sample manifests to the CloudCore VM](#copy-the-sample-manifests-to-the-cloudcore-vm)
-  - [2. Inspect the model's supported properties](#2-inspect-the-models-supported-properties)
-  - [3. Apply the DeviceModel](#3-apply-the-devicemodel)
-  - [4. Instantiate the Device](#4-instantiate-the-device)
-  - [5. Verify the registered device configuration](#5-verify-the-registered-device-configuration)
-  - [6. Modify desired device-twin properties](#6-modify-desired-device-twin-properties)
-- [What's Next?](#whats-next)
-- [TODOS](#todos)
+The mapper is delivered as a **precompiled Linux binary**. No Go toolchain, source build, or custom driver implementation is required to use this playground.
+
+> **Simulation boundary:** `virtual-ethernet` is a logical protocol identifier used by the mapper. The current demo does **not** transmit automotive Ethernet frames, communicate with a physical ECU, or provide safety-rated vehicle control.
+
+## Contents
+
+1. [What the playground provides](#what-the-playground-provides)
+2. [Reference topology](#reference-topology)
+3. [Architecture and prerequisites](#architecture-and-prerequisites)
+4. [Virtual Ethernet Mapper](#virtual-ethernet-mapper)
+5. [Interfaces and data flow](#interfaces-and-data-flow)
+6. [Create the testbed](#create-the-testbed)
+7. [Deploy the automotive ECU demo](#deploy-the-automotive-ecu-demo)
+8. [Use the device twin](#use-the-device-twin)
+9. [Run the NGINX edge workload](#run-the-nginx-edge-workload)
+10. [Scope](#scope)
+
+**Reading order:** The architecture, interfaces, and digital-twin examples below explain how the playground works; they do not require a running environment. Executable steps begin at [Create the testbed](#create-the-testbed). Device commands are introduced only after [Deploy the automotive ECU demo](#deploy-the-automotive-ecu-demo).
 
 ---
 
-## What is ContinuumX?
+## What the playground provides
 
-**ContinuumX** extends Kubernetes with native edge computing capabilities, bringing containerised application orchestration and device management to edge nodes, based on the CNCF project KubeEdge. It consists of two main components:
+| Capability | What you can do |
+|---|---|
+| Cloud–edge orchestration | Run a Kubernetes control plane with ContinuumX CloudCore and an edge worker running EdgeCore. |
+| Edge application deployment | Schedule an NGINX container onto the edge VM. |
+| Device discovery and modeling | Register an automotive thermal-management `DeviceModel` and a concrete `Device` with 19 properties. |
+| Cloud-to-edge control | Change a desired property, such as the target coolant temperature, using `kubectl`. |
+| Edge-to-cloud monitoring | Observe simulated property readings and the reconciled device twin in `DeviceStatus`. |
+| Continuous reporting | Report enabled properties through coordinated, batched Device Management Interface (DMI) requests. |
+| Persistent operation | Run the mapper as a `systemd` service that starts with the edge VM. |
 
-- **CloudCore**, runs on the Kubernetes control plane. Manages edge nodes, synchronises metadata, and exposes the CloudHub WebSocket endpoint that edge nodes connect to.
-- **EdgeCore**, runs as a `systemd` service on each edge node. Manages local containers, reports node status back to the cloud, and operates autonomously when the cloud connection is intermittent.
+**Reference environment:** VirtualBox, Debian 13, Kubernetes v1.32, and ContinuumX based on KubeEdge v1.23.
 
-ContinuumX also supports **MQTT**, enabling edge devices to communicate through edge nodes via the EventBus component.
-
-`cxadm` is the ContinuumX CLI, equivalent to upstream `keadm`, used to deploy CloudCore (via Helm) and to join edge nodes.
-
----
-
-## Reference Topology
-
-<!---
-```
-┌───────────────────────────────────────────┐     Host-Only Network
-│  VirtualBox Host                          │     192.168.56.0/24
-│                                           │
-│  ┌────────────────────────────────────┐   │   ┌────────────────────────────────────┐
-│  │  VM0: u2d4sdv_cloud  192.168.56.10 │◄──┼──►│  VM1: u2d4sdv_edge  192.168.56.11  │
-│  │  Debian 13 · K8s v1.32             │   │   │  Debian 13                         │
-│  │  CloudCore cx-v1.23                │   │   │  EdgeCore cx-v1.23                 │
-│  │                                    │   │   │                                    │
-│  │  NAT · Host-Only · Bridged         │   │   │  NAT · Host-Only                   │
-│  └────────────────────────────────────┘   │   └────────────────────────────────────┘
-│                                           │
-└───────────────────────────────────────────┘
-```
--->
+## Reference topology
 
 ```mermaid
-%%{init: {"theme": "neutral"}}%%
 flowchart LR
     subgraph VBox["VirtualBox Host"]
         Cloud["`**VM0: u2d4sdv_cloud**
@@ -85,493 +59,556 @@ flowchart LR
     192.168.56.11
     Debian 13
     EdgeCore cx-v1.23
-    
+
     NAT · Host-Only`"]
 
     Cloud <-->|"Host-Only Network<br/>192.168.56.0/24"| Edge
 ```
 
-| VM | Hostname | Host-Only IP | Role |
+| VM | Hostname | Host-only IP | Role |
 |---|---|---|---|
-| VM 0 | `u2deb-cloud` | `192.168.56.10` | K8s Control Plane + ContinuumX CloudCore |
-| VM 1 | `u2ded-edge` | `192.168.56.11` | Edge Worker Node + ContinuumX EdgeCore |
+| VM 0 | `u2deb-cloud` | `192.168.56.10` | Kubernetes control plane + ContinuumX CloudCore |
+| VM 1 | `u2deb-edge` | `192.168.56.11` | Edge worker node + ContinuumX EdgeCore + mapper |
 
----
+The two addresses shown are the reference configuration of the supplied VDI images. If you build your own VMs, adjust the addresses and device node name in the manifests as appropriate.
 
-## Getting Started
+## Architecture and prerequisites
 
-Choose the path that suits you:
+The **cloud VM** hosts Kubernetes and CloudCore. The **edge VM** represents the vehicle's **central ECU**: it runs EdgeCore and the Virtual Ethernet Mapper. The mapper hosts an in-process simulation of a **thermal-management peripheral ECU**.
 
-- **[Option 1](#option-1-build-from-scratch)**, Follow the step-by-step guides to provision both VMs yourself. Recommended if you want to understand what every layer does.
-- **[Option 2](#option-2-create-vms-from-pre-built-vdi-disks)**, Download two pre-built VDI disks and create VirtualBox VMs using those existing disks. Recommended if you want a working cluster in minutes.
+A **device mapper** is an edge-side software component that translates between ContinuumX device-management/twin interfaces and a real or simulated peripheral ECU. In this playground, the mapper is already provided as a binary and exposes the simulated ECU through **DMI**; EdgeCore **DeviceTwin** remains responsible for local twin processing and synchronization toward the cloud.
 
-Both options converge at [Verify the Testbed](#verify-the-testbed).
+```mermaid
+graph TB
+    User["User / kubectl"]
 
----
+    subgraph Cloud["Cloud VM · u2deb-cloud"]
+        Model["DeviceModel\nautomotive-thermal-ecu"]
+        Device["Device\nautomotive-thermal-ecu-001"]
+        CloudTwin["Cloud device twin\ndesired + reported state"]
+        Status["DeviceStatus\nruntime twin values"]
+        K8s["Kubernetes API + CloudCore"]
 
-## Option 1, Build from Scratch
+        Model --> Device
+        Device --> CloudTwin
+        CloudTwin --> Status
+        K8s --- Model
+        K8s --- Device
+        K8s --- Status
+    end
 
-Three guides, to be followed in order.
+    subgraph Edge["Edge VM · u2deb-edge (central ECU)"]
+        EdgeTwin["EdgeCore\nlocal twin + DMI"]
+        Mapper["Virtual Ethernet Mapper\nprecompiled binary / systemd"]
+        ECU["Simulated thermal-management\nperipheral ECU"]
 
-### Step 1, Prepare the CloudCore VM
+        EdgeTwin <-->|"DMI over Unix sockets"| Mapper
+        Mapper <-->|"logical virtual-ethernet"| ECU
+    end
 
-Follow **[`vm0-continuumx-cloudcore-v1.23.md`](./doc/vm0-continuumx-cloudcore-v1.23.md)** to provision a Debian 13 VM running Kubernetes v1.32 with containerd and Flannel CNI, configured and validated as a ready baseline for ContinuumX CloudCore.
+    User -->|"kubectl apply / patch / get"| K8s
+    CloudTwin <-->|"cloud-edge twin synchronization"| EdgeTwin
+```
 
-At the end of this guide the VM (`u2d4sdv_cloud`, `192.168.56.10`) will have:
-- A fully operational single-node Kubernetes control plane
-- All ContinuumX pre-conditions satisfied (taint removed, kube-proxy patched, CA files present, kubeconfig available to root)
+### Environment required for the examples
 
-### Step 2, Prepare the EdgeCore VM
+The sections [Create the testbed](#create-the-testbed) and [Deploy the automotive ECU demo](#deploy-the-automotive-ecu-demo) establish the environment below. **You do not need an existing ContinuumX installation before starting this guide.**
 
-Follow **[`vm1-continuumx-edgecore-v1.23.md`](./doc/vm1-continuumx-edgecore-v1.23.md)** to provision a second Debian 13 VM with containerd, configured as a minimal edge worker node baseline.
+- Two Debian 13 VMs matching the reference topology, either created from scratch or using the provided VDI disks.
+- A working ContinuumX CloudCore and EdgeCore installation, with both Kubernetes nodes `Ready`.
+- `kubectl` configured on the cloud VM and SSH access from the host to both VMs.
+- This playground repository available on the host computer, providing the mapper binary and sample manifests.
 
-At the end of this guide the VM (`u2d4sdv_edge`, `192.168.56.11`) will have:
-- containerd installed and running with `SystemdCgroup = true`
-- Static IP on the Host-Only interface, `/etc/hosts` entries for both nodes, swap disabled
+### Included release artifacts
 
-### Step 3, Install CloudCore and EdgeCore
+| Artifact | Purpose |
+|---|---|
+| `manifests/samples/devices/device-model.yaml` | Automotive thermal ECU model |
+| `manifests/samples/devices/device-instance.yaml` | Automotive thermal ECU instance |
+| `bin/mapper/linux-amd64/virtual-ethernet` | Precompiled mapper executable |
+| `config/virtual-ethernet.yaml` | Mapper runtime configuration |
+| `deploy/systemd/continuumx-virtual-ethernet.service` | Persistent mapper service |
+| `manifests/templates/nginx-edge.yaml` | Edge workload example |
 
-Follow **[`continuumx-v1_23-cloudcore-edgecore-install.md`](./doc/continuumx-v1_23-cloudcore-edgecore-install.md)** to deploy ContinuumX on both VMs using `cxadm`.
+## Virtual Ethernet Mapper
 
-This guide covers:
-- **Part I**, Install `cxadm` on the control plane, run `cxadm init` to deploy CloudCore as a Helm-managed pod in the `kubeedge` namespace, configure Cilium cloud-side, and retrieve the edge join token.
-- **Part II**, Install `cxadm` on the edge node, run `cxadm join` to register `u2d4sdv_edge` as a ContinuumX edge worker, and configure Cilium edge-side.
+The **Virtual Ethernet Mapper** connects the ContinuumX device-management subsystem to a self-contained simulated ECU. It allows a user to exercise both **desired state** (commands sent to the ECU) and **reported state** (values read back from the ECU).
 
-At the end of this guide you will have a live two-node cluster. Continue to [Verify the Testbed](#verify-the-testbed).
+### What it does
 
----
+- Registers the `virtual-ethernet` protocol with EdgeCore over DMI.
+- Instantiates the simulated ECU defined by the `automotive-thermal-ecu` model.
+- Accepts writes to seven configurable properties and exposes twelve read-only properties.
+- Simulates a basic thermal response: the coolant temperature changes gradually toward a value influenced by the target temperature and the fan command; pump and fan measurements approach their requested settings.
+- Collects and publishes enabled device-twin properties at configured intervals, combining due readings into batched DMI reports.
+- Reports device health and operates persistently through `systemd`.
 
-## Option 2, Create VMs from Pre-Built VDI Disks
+This is a **demonstration model**, not a calibrated thermal plant. `operatingMode` and `samplingInterval` are writable configuration properties, but in the supplied simulator they do not change the thermal calculation or override the reporting intervals specified in the Device manifest.
 
-Download the two pre-built **Virtual Disk Image (`.vdi`)** files and create a new VirtualBox VM for each one. These files are **virtual hard disks, not VirtualBox appliances** (`.ova`/`.ovf`): do **not** use **File → Import Appliance**. Instead, create each VM with **New** and select **Use an Existing Virtual Hard Disk File**.
+### Supported properties
 
-The disks already contain Debian 13, Kubernetes and the relevant ContinuumX components (CloudCore/EdgeCore), together with the guest-side configuration. **Do not select a Debian installation ISO or run an unattended OS installation.** Both VMs must be configured to boot in **UEFI/EFI mode**.
+**Measurements and identity - read-only (12)**
 
-### 2.1 Download and Extract the VDI Disks
-
-| VDI disk | VM | Download |
+| Property | Type | Unit / meaning |
 |---|---|---|
-| `u2d4sdv_cloud.vdi` | CloudCore (control plane) | [u2d4sdv_cloud.vdi.tar.gz](https://drive.google.com/file/d/1owE9avnQFH84rgoHqRonNX7xVDDgO8ip/view?usp=drive_link) |
-| `u2d4sdv_edge.vdi` | EdgeCore (edge worker) | [u2d4sdv_edge.vdi.tar.gz](https://drive.google.com/file/d/1RI-MqrhOZ4BdTkz_tthgPjHZImDyjZYr/view?usp=drive_link) |
+| `coolantTemperature` | `DOUBLE` | °C · simulated outlet temperature |
+| `inverterTemperature` | `DOUBLE` | °C · simulated inverter temperature |
+| `motorTemperature` | `DOUBLE` | °C · simulated motor temperature |
+| `coolantPressure` | `FLOAT` | bar · coolant circuit pressure |
+| `pumpSpeed` | `INT` | rpm · actual simulated pump speed |
+| `fanDutyCycle` | `INT` | % · actual simulated fan duty cycle |
+| `supplyVoltage` | `FLOAT` | V · supply measurement |
+| `coolantLevel` | `INT` | % · coolant reservoir level |
+| `faultActive` | `BOOLEAN` | Simulated fault indication |
+| `faultCode` | `STRING` | Simulated diagnostic code |
+| `firmwareVersion` | `STRING` | Simulator firmware identifier |
+| `serialNumber` | `STRING` | Simulated device identifier |
 
-1. Download both `.tar.gz` archives.
-2. Extract each archive to obtain its `.vdi` disk file. On a Linux host, for example:
+**Controls - read/write (7)**
 
-   ```bash
-   tar -xzf u2d4sdv_cloud.vdi.tar.gz
-   tar -xzf u2d4sdv_edge.vdi.tar.gz
-   ```
-
-3. Move the extracted VDI files to their **permanent locations** on the host before creating the VMs. VirtualBox will use the existing files directly; avoid moving or renaming them after they have been attached.
-4. Confirm that the extracted filenames match those in the table above (or use the actual extracted filenames when selecting the disks).
-
-### 2.2 Create the Host-Only Network in VirtualBox
-
-Both VMs communicate over a dedicated host-only network. Create this network **before** creating the VMs.
-
-1. Open VirtualBox → **File → Tools → Network Manager** (the menu location may vary by VirtualBox version).
-2. Select **Host-only Networks**.
-3. Click **Create** to add a host-only adapter (for example, `vboxnet0`).
-4. Configure:
-   - **IPv4 Address:** `192.168.56.1`
-   - **IPv4 Network Mask:** `255.255.255.0`
-5. Disable the **DHCP Server** for this host-only network; the prepared guest systems use static IP addresses.
-6. Click **Apply** if your VirtualBox version requires it.
-
-> **2.3**: Host-only Network Manager showing 192.168.56.1/24 and DHCP disabled.
-!["Host-onlyNetworkManager"](./doc/images/Host-onlyNetworkManager.png 'Host-only Network Manager showing 192.168.56.1/24 and DHCP disabled.')
-
-### 2.3 Create the Hoard Disks in VirtualBox
-
-Create the Hard Disks for both VMs **before** creating the VMs.
-
-1. Open VirtualBox → **File → Tools → Menu** (the menu location may vary by VirtualBox version).
-2. Select **Hard disks**
-3. Click **Add** and select the control plane VM (u2d4sdv_cloud.vdi)
-4. Click **Add** and select the edge worker node VM (u2d4sdv_edge.vdi)
-
-> **2.3**: Virtual Box media showing both VMs Hard disks.
-!["HardDisks"](./doc/images/vmHd.png 'Virtual Box media showing both VMs Hard disks.')
-
-### 2.4 Create the CloudCore VM (`u2d4sdv_cloud`) from Its VDI
-
-1. In VirtualBox Manager, click **New** to open the **Create Virtual Machine** wizard.
-2. Set the VM name to **`u2d4sdv_cloud`** and select a suitable VM folder.
-3. Leave the **ISO Image** field empty; the existing VDI already contains the operating system. If the wizard offers unattended installation, leave it disabled / select **Skip Unattended Installation**.
-4. Select the guest operating system:
-   - **Type:** `Linux`
-   - **Distribution:** `Debian` (if this field is shown)
-   - **Version:** `Debian (64-bit)` / `Debian 13 (64-bit)` if available. The OS **inside the disk** is Debian 13, regardless of the exact VirtualBox menu label.
-5. Allocate CPU and RAM according to the available host resources and the intended Kubernetes workload. These hardware values are not encoded in the VDI file.
-6. **Enable EFI/UEFI boot** by selecting **Use EFI** in the wizard's hardware settings, if available. Otherwise enable it after creating the VM under **Settings → System → Motherboard → Enable EFI (special OSes only)** (wording varies by version).
-7. In the **Virtual Hard Disk** step choose **Use an Existing Virtual Hard Disk File** (not **Create a Virtual Hard Disk Now**).
-8. Open the disk selector (folder icon), click **Add** if necessary, browse to `u2d4sdv_cloud.vdi`, select it, and confirm.
-9. Review the summary and click **Finish** to create the VM.
-10. **Before first boot**, open **Settings → System** and confirm that EFI is enabled and the VDI is attached as the boot hard disk under **Settings → Storage**.
-
-> **2.4a:** New VM wizard: name `u2d4sdv_cloud`, Linux/Debian 13 (64-bit), no ISO.
-!["New VM wizardr"](./doc/images/vmWiz1-cloud.png 'New VM wizard: name `u2d4sdv_cloud`, Linux/Debian 13 (64-bit), no ISO.')
-
-> **2.4b:** Hardware settings with **Use EFI** enabled.
-!["SystemUEFI"](./doc/images/vmSystemEFI.png 'Hardware settings with **Use EFI** enabled.')
-
-> **2.4c:** Virtual Hard Disk screen **Use an Existing Virtual Hard Disk File** and `u2d4sdv_cloud.vdi` selected.
-!["Virtual Hard Disk"](./doc/images/vmWiz2-cloud.png 'Virtual Hard Disk screen **Use an Existing Virtual Hard Disk File** and `u2d4sdv_cloud.vdi` selected.')
-
-With the VM powered off, open **Settings → Network** and configure the adapters in the same order as the prepared guest network interfaces:
-
-| Adapter | Attached to | Details |
+| Property | Type | Supported value / purpose |
 |---|---|---|
-| Adapter 1 | NAT | Internet / package access |
-| Adapter 2 | Host-Only Adapter | Select `vboxnet0` (or the host-only network created above) |
-| Adapter 3 | Bridged Adapter | Select your active physical LAN interface |
+| `operatingMode` | `STRING` | `AUTO`, `MANUAL`, or `ECO` |
+| `samplingInterval` | `INT` | 1–3600 s · stored configuration value |
+| `targetCoolantTemperature` | `DOUBLE` | 20–100 °C · temperature setpoint |
+| `pumpEnabled` | `BOOLEAN` | `true` / `false` |
+| `targetPumpSpeed` | `INT` | 0–6000 rpm |
+| `coolingFanEnabled` | `BOOLEAN` | `true` / `false` |
+| `targetFanDutyCycle` | `INT` | 0–100% |
 
-Enable each adapter and ensure **Virtual Cable Connected** is checked. For the bridged adapter, select the actual host interface (for example, an Ethernet or Wi-Fi interface) rather than leaving it unassigned.
+The authoritative data types, bounds, model methods, and defaults are defined in `device-model.yaml` and `device-instance.yaml`.
 
-### 2.5 Create the EdgeCore VM (`u2d4sdv_edge`) from Its VDI
+## Interfaces and data flow
 
-1. Click **New** in VirtualBox Manager to create a **separate** VM.
-2. Set the VM name to **`u2d4sdv_edge`** and choose its VM folder.
-3. Leave **ISO Image** empty and disable/skip unattended installation; Debian 13 is already installed on the VDI.
-4. Select **Linux → Debian → Debian (64-bit)** (or **Debian 13 (64-bit)** if offered).
-5. Allocate CPU and RAM appropriate for the edge workloads.
-6. Enable **Use EFI** in the wizard, or confirm **Settings → System → Motherboard → Enable EFI** before booting.
-7. In the **Virtual Hard Disk** step select **Use an Existing Virtual Hard Disk File**; browse to and attach **`u2d4sdv_edge.vdi`** using the disk selector and **Add** where required.
-8. Click **Finish**. Verify the existing VDI under **Settings → Storage** and EFI under **Settings → System** before booting.
+The playground contains **three different mechanisms** that work together. They are related, but they should not be treated as interchangeable:
 
-
-> **2.5a:** New VM wizard: name `u2d4sdv_edge`, Linux/Debian 13 (64-bit), no ISO.
-!["New VM wizardr"](./doc/images/vmWiz1-edge.png 'New VM wizard: name `u2d4sdv_edge`, Linux/Debian 13 (64-bit), no ISO.')
-
-> **2.5b:** Hardware settings with **Use EFI** enabled.
-!["SystemUEFI"](./doc/images/vmSystemEFI.png 'Hardware settings with **Use EFI** enabled.')
-
-> **2.5c:** Virtual Hard Disk screen **Use an Existing Virtual Hard Disk File** and `u2d4sdv_edgevdi` selected.
-!["Virtual Hard Disk"](./doc/images/vmWiz2-edge.png 'Virtual Hard Disk screen **Use an Existing Virtual Hard Disk File** and `u2d4sdv_edge.vdi` selected.')
-
-
-With the VM powered off, open **Settings → Network** and configure:
-
-| Adapter | Attached to | Details |
+| Mechanism | Where it runs | Main responsibility |
 |---|---|---|
-| Adapter 1 | NAT | Internet / package access |
-| Adapter 2 | Host-Only Adapter | Select the **same** host-only network used by CloudCore (`vboxnet0` in this example) |
+| **Device Controller and Kubernetes API** | Cloud | Defines `DeviceModel` and `Device`, accepts desired configuration, and maintains the cloud-side `DeviceStatus`. |
+| **DeviceTwin and cloud–edge synchronization** | EdgeCore, with CloudCore/Device Controller | Maintains the edge-side view of device properties, routes desired-state updates, and synchronizes reported state back to the cloud. |
+| **Device Management Interface (DMI)** | Between EdgeCore and the mapper | Registers the mapper, exchanges device/model configuration, forwards device operations, and receives mapper status reports. |
 
-Enable both adapters and check **Cable Connected**.
+The **EventBus/MQTT interface** is an additional, legacy-compatible way for edge applications and MQTT-based mappers to exchange messages with DeviceTwin. It is **not required** for this playground's DMI-connected mapper.
 
-### 2.6 VMs user
+### Communication interfaces
 
-Both VMs have a super user; use the following credentials for logging in:
+The playground exposes **one cloud-side API** and uses **two local DMI gRPC endpoints** for communication between EdgeCore and the mapper.
 
-- Username: **user**
-- Password: **user123**
+| Interface | Access point / API resources | Purpose |
+|---|---|---|
+| Kubernetes API | `DeviceModel`, `Device`, and `DeviceStatus` resources in API group/version `devices.kubeedge.io/v1beta1` | Register the model and device, update desired properties, and read the latest reported state using `kubectl`. |
+| EdgeCore DMI gRPC endpoint | Unix socket: `/etc/kubeedge/dmi.sock` | Accepts mapper registration, device/model discovery, and `ReportDeviceStatus` / `ReportDeviceStates` requests from the mapper. |
+| Mapper DMI gRPC endpoint | Unix socket: `/etc/kubeedge/virtual-ethernet.sock` | Accepts device/model updates and operations sent by EdgeCore to the mapper. |
 
-For better user experience, e.g., copy-paste functionality, you may use **ssh** for connecting to the VMs using the NAT adapter IP assigned to each VM.
+The DMI endpoints use **gRPC over local Unix-domain sockets**. The `virtual-ethernet://…` value in the Device manifest identifies the simulated connection; it is **not** a physical Ethernet socket or public network service.
 
-### 2.7 Start Both VMs
+### Supporting runtime components
 
-1. Start **`u2d4sdv_cloud`** first and wait until Debian has finished booting and its services have started.
-2. Start **`u2d4sdv_edge`**.
-3. Confirm that the prepared host-only addresses are present:
-   - CloudCore VM: `192.168.56.10`
-   - EdgeCore VM: `192.168.56.11`
+These components participate in the workflow but are **not themselves external APIs or mapper communication endpoints**:
 
-The EdgeCore service should connect to CloudCore automatically after boot. No manual `cxadm join` is required, because the edge node was already registered in the pre-built image. Proceed to [Verify the Testbed](#verify-the-testbed).
+| Component / mechanism | Location / identifier | Responsibility |
+|---|---|---|
+| Cloud–edge transport | CloudHub ↔ EdgeHub | Transfers device configuration and status synchronization messages between cloud and edge; **not an MQTT connection**. |
+| EdgeCore DeviceTwin | Internal EdgeCore module and local twin state | Processes device-twin updates and maintains the edge-side device state. |
+| Simulated thermal ECU | In-process simulator behind the mapper's driver | Applies supported setpoints and supplies simulated readings; it exposes no separate network service. |
+| Service manager (`systemd`) | `continuumx-virtual-ethernet.service` | Starts, stops, supervises, and restarts the mapper process. |
 
+EventBus/MQTT is a **separate optional integration mechanism** for legacy MQTT clients; it is not used directly by this DMI-based mapper, as explained below.
 
-> **Troubleshooting:** If a VM cannot find a bootable disk, check **Settings → Storage** for the correct VDI and **Settings → System** for EFI/UEFI. If the VMs boot but cannot communicate, verify that both use the same host-only network, that DHCP is disabled, and that the adapters are in the order shown above.
+### Architecture: active DMI path and optional MQTT interface
 
----
+```mermaid
+flowchart LR
+    User["User / kubectl"]
 
-## Verify the Testbed
+    subgraph Cloud["Cloud VM"]
+        API["Kubernetes API\nDevice / DeviceStatus"]
+        Controller["Device Controller"]
+        CH["CloudHub"]
+        API <--> Controller
+        Controller <--> CH
+    end
 
-Once both VMs are running (regardless of which option you followed), perform the checks below from the **CloudCore VM** (`u2d4sdv_cloud`).
+    subgraph Edge["Edge VM · EdgeCore"]
+        EH["EdgeHub"]
+        Twin["DeviceTwin\nlocal state / synchronization"]
+        DMI["DMI gRPC interface"]
+        Bus["EventBus\nMQTT integration"]
+        EH <--> Twin
+        Twin <--> DMI
+        Twin -.-> Bus
+    end
 
-### Check 1, Edge Node Has Joined and Is Ready
+    subgraph MapperApp["Virtual Ethernet Mapper service"]
+        Mapper["DMI client / server\ncoordinated reporter"]
+        ECU["Simulated ECU"]
+        Mapper <--> ECU
+    end
+
+    MQTT["Optional MQTT broker /\nlegacy MQTT applications"]
+    User --> API
+    CH <-->|"cloud–edge link"| EH
+    DMI <-->|"gRPC over Unix sockets\nactive demo path"| Mapper
+    Bus <-.->|"MQTT topics\nnot required by this mapper"| MQTT
+```
+
+The solid **DMI** connection is the one used by the supplied Virtual Ethernet Mapper. The dashed **EventBus/MQTT** connection illustrates the separate MQTT compatibility interface provided by EdgeCore; it is not a second communications link used by the mapper.
+
+### Desired, observed-desired and reported: three different values
+
+A digital twin distinguishes **what was requested** from **what the mapper has seen** and **what the device says its value is**:
+
+| Field | Where to read it | Meaning |
+|---|---|---|
+| **Desired** | `Device.spec.properties[].desired.value` | The target configured by the user/cloud. It expresses an intention, **not** a device measurement or an acknowledgment. |
+| **Observed desired** (`observedDesired`) | `DeviceStatus.status.twins[]` | The **desired value that the mapper/edge reporting path has observed**. It indicates how current the edge-side processing is relative to the cloud command. **It is not an observed temperature.** |
+| **Reported** (`reported`) | `DeviceStatus.status.twins[]` | The value obtained from the device or simulator and sent back through the reporting path. It is the feedback used to compare actual state against the desired state. |
+
+The following values illustrate the sequence of a setpoint update. **This is an example, not output from an already deployed device.** For example, after changing `targetCoolantTemperature` from **55 °C** to **63 °C**:
+
+| Stage | Desired | Observed desired | Reported |
+|---|---|---|---|
+| Immediately after cloud patch | `63.0` | May still be `55.0` | May still be `55` |
+| After the mapper processes and reports the new command | `63.0` | `63.0` | `63` (or equivalent representation) |
+
+If `observedDesired` lags behind `desired`, the new command has not yet been reflected in the cloud's acknowledgment view. If `observedDesired` is current but `reported` differs, the requested state and the device's returned value are not in agreement. For this simulator, the numerical formatting may differ (`"63.0"` versus `"63"`); compare values by their type, not by exact string spelling.
+
+>**Important:** `observedDesired` is evidence about synchronization, not an independent sensor reading or a proof that a physical actuator moved. The `DeviceStatus` resource contains the latest reported twin **snapshot**; it is not a historical time-series database.
+
+Once the testbed is running and the simulated ECU has been deployed, you can inspect these fields using the commands in [Verify desired and reported state](#verify-desired-and-reported-state). No terminal commands are needed to understand this example.
+
+### Telemetry versus control
+
+These describe **two different kinds of information**, even though both can be exposed through the same `DeviceStatus` reporting mechanism in this playground.
+
+| | **Control / configuration** | **Telemetry / measurement** |
+|---|---|---|
+| Example | `targetCoolantTemperature` | `coolantTemperature` |
+| Access mode | Read/write | Read-only |
+| Origin | Requested by the cloud user | Sampled from the simulated ECU |
+| Meaning | "Make the coolant target 63 °C" | "The coolant is currently 58.2 °C" |
+| Direction | Cloud → edge → mapper → ECU | ECU → mapper → edge → cloud |
+| Reported result | Commanded value read back / acknowledged | Current sampled value |
+
+A requested target of **63 °C** does not mean that the **measured coolant temperature** should immediately become 63 °C. The simulator models a gradual response. It is therefore normal for the reported `targetCoolantTemperature` to be 63 while `coolantTemperature` is still evolving.
+
+```mermaid
+flowchart LR
+    CloudCommand["Cloud control\ntargetCoolantTemperature = 63 °C"]
+    Apply["Mapper writes target"]
+    Simulator["Simulated thermal response"]
+    Setpoint["Control feedback\nreported target = 63 °C"]
+    Reading["Telemetry\ncoolantTemperature = 58.2 °C"]
+
+    CloudCommand --> Apply --> Simulator
+    Apply --> Setpoint
+    Simulator --> Reading
+```
+
+In this release, enabled properties, including simulated measurements, are periodically read and combined into **batched DMI `ReportDeviceStatus` calls**. High-rate telemetry can also be delivered through separately configured data-plane integrations in the wider Mapper Framework, but no such external MQTT/HTTP/database destination is configured as part of this playground.
+
+### Control path: cloud to simulated ECU
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant API as Kubernetes API
+    participant DC as Device Controller / CloudHub
+    participant EH as EdgeHub
+    participant Twin as EdgeCore DeviceTwin
+    participant DMI as EdgeCore DMI
+    participant Mapper as Virtual Ethernet Mapper
+    participant ECU as Simulated ECU
+
+    User->>API: Patch Device desired = 63.0
+    API->>DC: Device change
+    DC->>EH: Cloud–edge synchronization
+    EH->>Twin: Deliver desired/configuration update
+    Twin->>DMI: Route device update
+    DMI->>Mapper: gRPC device/twin update
+    Mapper->>ECU: Apply target = 63 °C
+```
+
+There is **no MQTT hop between the mapper and EdgeCore** in this command path.
+
+### Reporting path: simulated ECU to cloud
+
+Two activities occur **independently**: the mapper periodically updates the reported twin state, while a user can query the cloud-side `DeviceStatus` at any time. The query does not trigger a mapper read or a new DMI report.
+
+```mermaid
+sequenceDiagram
+    participant ECU as Simulated ECU
+    participant Mapper as Virtual Ethernet Mapper
+    participant DMI as EdgeCore DMI
+    participant Twin as EdgeCore DeviceTwin
+    participant EH as EdgeHub
+    participant DC as CloudHub / Device Controller
+    participant API as Kubernetes API
+    actor User
+
+    par Background reporting and synchronization
+        loop At configured collection intervals
+            Mapper->>ECU: Read due properties
+            ECU-->>Mapper: Current values
+            Mapper->>DMI: Batched ReportDeviceStatus (gRPC)
+            DMI->>Twin: Process reported twin state
+            Twin->>EH: Synchronize edge-side state
+            EH->>DC: Cloud–edge transport
+            DC->>API: Persist latest DeviceStatus
+        end
+    and Independent on-demand query
+        User->>API: kubectl get devicestatus
+        API-->>User: Latest stored twin snapshot
+    end
+```
+
+The mapper collects each property's current value according to its `collectCycle` and groups due values into a single DMI request. **`collectCycle` is expressed in milliseconds** in the Device manifest. The batching behavior avoids sending a separate DMI request for each of the 19 properties.
+
+Because the query is independent of the collection loop, it returns the **latest state already stored in Kubernetes**; depending on synchronization timing, it may precede the next measurement or command acknowledgment. It is a snapshot, not an immediate live read of the simulated ECU.
+
+### Where the legacy MQTT/EventBus infrastructure fits
+
+KubeEdge's traditional device-twin integration uses **EventBus** as a bridge between MQTT clients and EdgeCore's DeviceTwin module. A legacy MQTT-connected mapper or application can publish/subscribe to `$hw/events/...` topics via an MQTT broker. For example, `$hw/events/device/<device-id>/twin/update` is a conventional device-twin update topic. EventBus routes such messages internally to DeviceTwin, which maintains the local twin and can synchronize its state toward the cloud via EdgeHub/CloudHub.
+
+```mermaid
+flowchart LR
+    Legacy["Legacy MQTT mapper / edge application"]
+    Broker["MQTT broker"]
+    EventBus["EdgeCore EventBus"]
+    Twin["EdgeCore DeviceTwin"]
+    EdgeHub["EdgeHub / CloudHub"]
+    Cloud["Cloud Device Controller / DeviceStatus"]
+
+    Legacy -->|"publish $hw/events/..."| Broker
+    Broker --> EventBus --> Twin --> EdgeHub --> Cloud
+    Twin -.->|"twin events / results"| EventBus
+```
+
+**In the supplied Virtual Ethernet Mapper:**
+
+- **DMI gRPC is used** for mapper registration, configuration, commands and device-status reporting.
+- **MQTT is not used by the mapper** to send or receive these device-twin updates. The generated framework can support optional MQTT *data publishing* when explicitly configured, but this demo does not enable it.
+- **EventBus is an EdgeCore component**, not the cloud–edge transport. EdgeCore may still generate legacy MQTT device-twin notifications for MQTT consumers; those are ancillary to this mapper's DMI reporting path.
+- **The internal EdgeCore message framework is not the same thing as EventBus/MQTT.** DeviceTwin and DMI can exchange internal module messages without the mapper becoming an MQTT client.
+
+The DMI and traditional MQTT paths therefore **share the device-twin management infrastructure**; they differ primarily in **how an external mapper or application connects to EdgeCore**. DMI does not eliminate DeviceTwin, EdgeHub or the cloud-side Device Controller.
+
+For more detail, consult the KubeEdge [Device Management Interface](https://kubeedge.io/docs/developer/dmi/), [DeviceTwin architecture](https://kubeedge.io/docs/architecture/edge/devicetwin/) and [MQTT message topics](https://release-1-23.docs.kubeedge.io/docs/developer/message_topics/) documentation.
+
+## Create the testbed
+
+Choose one of the following installation paths. Both produce the same two-VM topology.
+
+### Option A - Build the VMs from scratch
+
+Follow the existing guides in order:
+
+1. [Prepare the CloudCore VM](doc/vm0-continuumx-cloudcore-v1.23.md).
+2. [Prepare the EdgeCore VM](doc/vm1-continuumx-edgecore-v1.23.md).
+3. [Install ContinuumX CloudCore and EdgeCore](doc/continuumx-v1_23-cloudcore-edgecore-install.md).
+
+Then continue to [Deploy the automotive ECU demo](#deploy-the-automotive-ecu-demo).
+
+### Option B - Use the prebuilt VirtualBox disks
+
+The downloads are **VDI disks**, not OVA/OVF appliances. Create two new VirtualBox VMs and **select the existing VDI** as each VM's hard disk; do not use *Import Appliance*.
+
+| VM | Disk download |
+|---|---|
+| Cloud | [u2d4sdv_cloud.vdi.tar.gz](https://drive.google.com/file/d/1owE9avnQFH84rgoHqRonNX7xVDDgO8ip/view?usp=drive_link) |
+| Edge | [u2d4sdv_edge.vdi.tar.gz](https://drive.google.com/file/d/1RI-MqrhOZ4BdTkz_tthgPjHZImDyjZYr/view?usp=drive_link) |
+
+1. Download and extract both archives (`tar -xzf <archive>.tar.gz`). Keep the extracted disks in their permanent locations.
+2. In **VirtualBox → Tools → Network Manager**, create a **host-only network** with host IP `192.168.56.1/24` and DHCP disabled.
+3. For each new VM, choose **Linux / Debian 64-bit**, leave the ISO image empty, enable **EFI/UEFI**, and attach the matching **existing VDI disk**.
+4. Configure the VM network adapters as shown below, preserving adapter order.
+5. Boot the **cloud VM first**, followed by the edge VM.
+
+| VM | Adapter 1 | Adapter 2 | Adapter 3 |
+|---|---|---|---|
+| Cloud | NAT | Host-only (`vboxnet0`) | Bridged (your active LAN interface) |
+| Edge | NAT | Host-only (`vboxnet0`) | - |
+
+Useful illustrations from the existing documentation: [host-only network](doc/images/Host-onlyNetworkManager.png), [EFI setting](doc/images/vmSystemEFI.png), [cloud VDI selection](doc/images/vmWiz2-cloud.png), and [edge VDI selection](doc/images/vmWiz2-edge.png).
+
+The reference prebuilt images use the VM login `user` / `user123`; change the password when using the images outside an isolated evaluation environment.
+
+### Confirm the cluster
+
+Open a terminal on the **cloud VM**:
 
 ```bash
 kubectl get nodes -o wide
 ```
 
-Expected output:
+Both `u2deb-cloud` and `u2deb-edge` should appear as `Ready`.
 
-```
-NAME           STATUS   ROLES           AGE   VERSION    INTERNAL-IP     OS-IMAGE
-u2deb-cloud    Ready    control-plane   ...   v1.32.x    192.168.56.10   Debian GNU/Linux 13
-u2deb-edge     Ready    agent,edge      ...   v1.32.x    192.168.56.11   Debian GNU/Linux 13
-```
+## Deploy the automotive ECU demo
 
-Both nodes must show `Ready`. If `u2deb-edge` shows `NotReady`, wait 60 seconds and retry, EdgeCore may still be establishing its WebSocket connection to CloudCore.
+The following commands assume you have cloned or extracted this **playground repository on your host computer**, and can SSH into the VMs on their host-only addresses.
 
-If it remains `NotReady`, check EdgeCore logs on the edge VM:
+### 1. Register the model and device
+
+From the **host**, copy the manifests to the **cloud VM**:
 
 ```bash
-# On u2deb-edge
-journalctl -u edgecore -n 50 --no-pager
+ssh user@192.168.56.10 'mkdir -p ~/continuumx-demo'
+scp manifests/samples/devices/device-model.yaml \
+    manifests/samples/devices/device-instance.yaml \
+    user@192.168.56.10:~/continuumx-demo/
 ```
 
-### Check 2, Deploy NGINX to the Edge Node
-
-Deploy a demo NGINX pod targeted to the edge node, following the [KubeEdge upstream demo](https://kubeedge.io/docs/setup/install-with-binary#deploy-demo-on-edge-nodes).
-
-**Apply deployment manifest:**
+On the **cloud VM**:
 
 ```bash
-# On u2deb-cloud
+cd ~/continuumx-demo
+kubectl apply -f device-model.yaml
+kubectl apply -f device-instance.yaml
+kubectl get devicemodel,device -n default
+```
+
+The sample creates model `automotive-thermal-ecu` and device `automotive-thermal-ecu-001` on edge node `u2deb-edge`.
+
+### 2. Install the precompiled mapper on the edge VM
+
+From the **host**, copy the binary, runtime configuration and systemd unit:
+
+```bash
+scp bin/mapper/linux-amd64/virtual-ethernet \
+    config/virtual-ethernet.yaml \
+    deploy/systemd/continuumx-virtual-ethernet.service \
+    user@192.168.56.11:/tmp/
+```
+
+Then connect to the **edge VM**:
+
+```bash
+ssh user@192.168.56.11
+```
+
+Install and enable the service:
+
+```bash
+sudo install -d -m 0755 /opt/continuumx/virtual-ethernet
+sudo install -d -m 0755 /etc/continuumx/virtual-ethernet
+sudo install -m 0755 /tmp/virtual-ethernet \
+    /opt/continuumx/virtual-ethernet/virtual-ethernet
+sudo install -m 0644 /tmp/virtual-ethernet.yaml \
+    /etc/continuumx/virtual-ethernet/config.yaml
+sudo install -m 0644 /tmp/continuumx-virtual-ethernet.service \
+    /etc/systemd/system/continuumx-virtual-ethernet.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now continuumx-virtual-ethernet.service
+```
+
+Confirm that it is running:
+
+```bash
+systemctl is-active continuumx-virtual-ethernet.service
+```
+
+Expected result: `active`.
+
+### 3. Check the model and the mapper
+
+On the **cloud VM**:
+
+```bash
+kubectl get device automotive-thermal-ecu-001 -n default
+kubectl get devicestatus automotive-thermal-ecu-001 -n default
+```
+
+On the **edge VM**:
+
+```bash
+sudo journalctl -u continuumx-virtual-ethernet.service -n 25 --no-pager
+```
+
+## Use the device twin
+
+Run these commands on the **cloud VM**.
+
+### Change a desired temperature
+
+First, read the current setpoint:
+
+```bash
+kubectl get device automotive-thermal-ecu-001 -n default -o json \
+  | jq -r '.spec.properties[] | select(.name == "targetCoolantTemperature") | .desired.value'
+```
+
+Set it to **63 °C**:
+
+```bash
+kubectl patch device automotive-thermal-ecu-001 -n default --type=json \
+  -p='[
+    {"op":"test","path":"/spec/properties/14/name","value":"targetCoolantTemperature"},
+    {"op":"replace","path":"/spec/properties/14/desired/value","value":"63.0"}
+  ]'
+```
+
+### Verify desired and reported state
+
+After the device and mapper are installed, compare the requested target with the value acknowledged and reported through `DeviceStatus`:
+
+```bash
+# What the cloud requests
+kubectl get device automotive-thermal-ecu-001 -n default -o json \
+  | jq -r '.spec.properties[] | select(.name == "targetCoolantTemperature") |
+      "desired=\(.desired.value)"'
+
+# What the edge has observed and reported back
+kubectl get devicestatus automotive-thermal-ecu-001 -n default -o json \
+  | jq -r '.status.twins[]? | select(.propertyName == "targetCoolantTemperature") |
+      "observedDesired=\(.observedDesired.value) reported=\(.reported.value)"'
+```
+
+Immediately after a patch, `observedDesired` and `reported` may still show the previous values until the next reporting cycle. See [Desired, observed-desired and reported: three different values](#desired-observed-desired-and-reported-three-different-values) for the interpretation.
+
+### Monitor reported telemetry
+
+View the latest values and their reporting timestamps:
+
+```bash
+kubectl get devicestatus automotive-thermal-ecu-001 -n default -o json \
+  | jq -r '.status.twins[]? |
+      [.propertyName, (.reported.value // "-"), (.reported.metadata.timestamp // "-")] | @tsv'
+```
+
+To follow the temperatures and current target:
+
+```bash
+watch -n 5 "kubectl get devicestatus automotive-thermal-ecu-001 -n default -o json | jq -r '.status.twins[]? | select(.propertyName == \"coolantTemperature\" or .propertyName == \"targetCoolantTemperature\") | [.propertyName, .reported.value] | @tsv'"
+```
+
+The simulated `coolantTemperature` changes gradually, rather than immediately jumping to the requested setpoint.
+
+## Run the NGINX edge workload
+
+This independent example verifies that ContinuumX can schedule containerized applications to the edge VM. From the **host**, copy the workload manifest:
+
+```bash
+scp manifests/templates/nginx-edge.yaml user@192.168.56.10:~/continuumx-demo/
+```
+
+On the **cloud VM**:
+
+```bash
+cd ~/continuumx-demo
 kubectl apply -f nginx-edge.yaml
-```
-> The yaml fle is available at [manifests/templates/nginx-edge.yaml](manifests/templates/nginx-edge.yaml). It is also available at the u2deb-cloud root folder. If it is not present at your CloudCore node you can copy it from the aforementioned location.
- 
-**Wait for the pod to reach Running state:**
-
-```bash
-kubectl wait --for=condition=Ready pod \
-  -l app=nginx-edge \
-  --timeout=120s
-```
-
-> The first run may take longer as `u2deb-edge` pulls the `nginx:alpine` image. Subsequent deploys are faster.
-
-**Verify the pod is scheduled on the edge node:**
-
-```bash
+kubectl wait --for=condition=Ready pod -l app=nginx-edge --timeout=120s
 kubectl get pods -o wide
 ```
 
-Expected output:
-
-```
-NAME                          READY   STATUS    NODE
-nginx-edge-<hash>             1/1     Running   u2deb-edge
-```
-
-
-**Clean up:**
+The NGINX pod should be `Running` on `u2deb-edge`. When finished:
 
 ```bash
 kubectl delete -f nginx-edge.yaml
 ```
 
----
+## Scope
 
-## Device Management and Digital Twin Playground
+This playground demonstrates cloud–edge orchestration, simulated device management, desired/reported twin synchronization, and persistent mapper operation.
 
-This exercise models a **simulated automotive thermal-management peripheral ECU** attached to the vehicle's **central ECU**. In this playground, the **edge worker (`u2deb-edge`) represents the central ECU**, hosting ContinuumX EdgeCore; the peripheral thermal-management ECU is represented by a `Device` resource. The cloud VM hosts Kubernetes and ContinuumX CloudCore. The exercise uses the KubeEdge-compatible `devices.kubeedge.io/v1beta1` API.
-
-> **Scope:** Steps 1-6 demonstrate model registration, device instantiation and cloud-side **desired-state** changes. No vehicle hardware, physical automotive Ethernet device, sensor measurements or actuator operations are involved.
-
-### 1. Architecture and prerequisites
-
-`DeviceModel` defines the properties and capabilities of the **thermal-management peripheral ECU**. Its `Device` instance is assigned to `u2deb-edge`, the simulated **central ECU**. CloudCore and EdgeCore provide the cloud and edge components of the device-twin infrastructure. The desired state is configured from the cloud; reported state requires a mapper.
-
-A **device mapper** is an edge-side software component that translates between ContinuumX's device-management/twin interfaces and a real or simulated peripheral ECU. It receives configuration requests, reads measurements and publishes reported property values. **No mapper is installed in Steps 1-6.** The custom `virtual-ethernet` protocol identifier describes a simulated automotive Ethernet connection between the central ECU and peripheral ECU. It is a placeholder for Step 7: these manifests do **not** establish a network socket, communicate with a physical device, or implement an automotive Ethernet application protocol.
-
-```mermaid
-graph TB
-    User["User: kubectl"]
-    subgraph Cloud
-        Model["DeviceModel: automotive-thermal-ecu"]
-        Device["Device: automotive-thermal-ecu-001"]
-        CloudTwin["Cloud twin state"]
-        Status["DeviceStatus: runtime state"]
-        Model -->|Defines properties| Device
-        Device -->|Desired values| CloudTwin
-        CloudTwin -.-> Status
-    end
-    subgraph CentralECU
-        EdgeTwin["EdgeCore: local device twin"]
-        Mapper["Virtual mapper: future Step 7"]
-        Peripheral["Simulated thermal-management peripheral ECU"]
-        EdgeTwin -.-> Mapper
-        Mapper -.->|Simulated automotive Ethernet| Peripheral
-    end
-    User -->|Apply and patch| Device
-    User -.->|Inspect| Status
-    CloudTwin -->|Desired state sync| EdgeTwin
-    EdgeTwin -.->|Reported state sync: future| CloudTwin
-    classDef resource fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
-    classDef twin fill:#d1fae5,stroke:#059669,color:#065f46
-    classDef future fill:#f3f4f6,stroke:#9ca3af,color:#6b7280
-    class Model,Device,Status resource
-    class CloudTwin,EdgeTwin twin
-    class Mapper,Peripheral future
-```
-
-From the **CloudCore VM** (`u2d4sdv_cloud`), where `kubectl` is configured, verify the cluster and APIs:
-
-```bash
-kubectl get nodes -o wide
-kubectl api-resources --api-group=devices.kubeedge.io
-kubectl get crd devicemodels.devices.kubeedge.io devices.devices.kubeedge.io
-```
-
-The cloud and edge nodes should be `Ready`. The following examples use the `default` namespace.
-
-#### Copy the sample manifests to the CloudCore VM
-
-The sample files are in [`manifests/samples/devices/device-model.yaml`](manifests/samples/devices/device-model.yaml) and [`manifests/samples/devices/device-instance.yaml`](manifests/samples/devices/device-instance.yaml). Run **only the SSH/SCP commands below on your host computer**, from the playground repository root:
-
-```bash
-# HOST: copy the two manifests to the Kubernetes control-plane VM
-ssh user@192.168.56.10 'mkdir -p ~/continuumx-device-demo'
-scp manifests/samples/devices/device-model.yaml \
-    manifests/samples/devices/device-instance.yaml \
-    user@192.168.56.10:~/continuumx-device-demo/
-ssh user@192.168.56.10
-```
-
-From this point onward, run all commands **inside the CloudCore VM**:
-
-```bash
-# CLOUD VM
-cd ~/continuumx-device-demo
-ls -l device-model.yaml device-instance.yaml
-kubectl get nodes -o wide
-```
-
-If `kubectl` is only configured for the administrator, use the properly configured shell and return to `/home/user/continuumx-device-demo` before continuing. Replace `192.168.56.10` with the reachable cloud VM address if needed.
-
-### 2. Inspect the model's supported properties
-
-The model contains **19 automotive properties**: 12 read-only telemetry/identity fields and seven writable configuration/actuator targets. The following are **simulated values**, not real measurements or safety-rated commands.
-
-| Property | Type | Access | Description / unit |
-|---|---|---|---|
-| `coolantTemperature` | `DOUBLE` | `ReadOnly` | Coolant outlet temperature (Celsius, -40 to 150) |
-| `inverterTemperature` | `DOUBLE` | `ReadOnly` | Traction inverter temperature (Celsius, -40 to 180) |
-| `motorTemperature` | `DOUBLE` | `ReadOnly` | Electric traction motor temperature (Celsius, -40 to 200) |
-| `coolantPressure` | `FLOAT` | `ReadOnly` | Coolant circuit pressure (bar, 0 to 6) |
-| `pumpSpeed` | `INT` | `ReadOnly` | Actual coolant pump rotational speed (rpm, 0 to 6000) |
-| `fanDutyCycle` | `INT` | `ReadOnly` | Actual cooling fan duty cycle (%, 0 to 100) |
-| `supplyVoltage` | `FLOAT` | `ReadOnly` | Low-voltage supply measurement (V, 0 to 32) |
-| `coolantLevel` | `INT` | `ReadOnly` | Coolant reservoir level (%, 0 to 100) |
-| `faultActive` | `BOOLEAN` | `ReadOnly` | Simulated diagnostic fault indication |
-| `faultCode` | `STRING` | `ReadOnly` | Simulated diagnostic trouble code or NONE |
-| `firmwareVersion` | `STRING` | `ReadOnly` | Peripheral ECU firmware version |
-| `serialNumber` | `STRING` | `ReadOnly` | Peripheral ECU serial number |
-| `operatingMode` | `STRING` | `ReadWrite` | Cooling control mode: AUTO, MANUAL or ECO |
-| `samplingInterval` | `INT` | `ReadWrite` | Simulated telemetry sampling interval (s, 1 to 3600) |
-| `targetCoolantTemperature` | `DOUBLE` | `ReadWrite` | Desired coolant temperature target (Celsius, 20 to 100) |
-| `pumpEnabled` | `BOOLEAN` | `ReadWrite` | Commanded coolant pump enable state |
-| `targetPumpSpeed` | `INT` | `ReadWrite` | Requested coolant pump speed (rpm, 0 to 6000) |
-| `coolingFanEnabled` | `BOOLEAN` | `ReadWrite` | Commanded cooling fan enable state |
-| `targetFanDutyCycle` | `INT` | `ReadWrite` | Requested cooling fan duty cycle (%, 0 to 100) |
-
-The distinction between **actual** values (e.g., `pumpSpeed`, `fanDutyCycle`) and **commanded** values (e.g., `targetPumpSpeed`, `targetFanDutyCycle`) enables explicit desired-vs-reported testing. Property ranges and units are model metadata; an eventual mapper must validate and enforce behavior.
-
-### 3. Apply the DeviceModel
-
-The model YAML is [`manifests/samples/devices/device-model.yaml`](manifests/samples/devices/device-model.yaml). On the **CloudCore VM**, from `~/continuumx-device-demo`:
-
-```bash
-kubectl apply --dry-run=server -f device-model.yaml
-kubectl apply -f device-model.yaml
-kubectl get devicemodels.devices.kubeedge.io -n default
-kubectl describe devicemodel automotive-thermal-ecu -n default
-```
-
-The `virtual-ethernet` protocol is **custom**, not a built-in automotive Ethernet driver or communication stack. Its configuration describes the intended simulated Ethernet link; an application-layer protocol and mapper will be implemented and verified in Step 7.
-
-### 4. Instantiate the Device
-
-The instance YAML is [`manifests/samples/devices/device-instance.yaml`](manifests/samples/devices/device-instance.yaml). It creates `automotive-thermal-ecu-001` and assigns the peripheral ECU to the central ECU/edge node (`spec.nodeName: u2deb-edge`). Confirm that node name with `kubectl get nodes -o wide` and change it in the local YAML if necessary.
-
-The instance starts with these seven desired values:
-
-| Writable property | Initial desired value |
-|---|---|
-| `operatingMode` | `AUTO` |
-| `samplingInterval` | `10` |
-| `targetCoolantTemperature` | `55.0` |
-| `pumpEnabled` | `true` |
-| `targetPumpSpeed` | `1800` |
-| `coolingFanEnabled` | `true` |
-| `targetFanDutyCycle` | `35` |
-
-The instance also specifies property collection/reporting cycles, custom protocol visitors and illustrative `configureCooling` and `configureSampling` method descriptions. Methods do not execute without mapper support.
-
-```bash
-# CLOUD VM
-kubectl apply --dry-run=server -f device-instance.yaml
-kubectl apply -f device-instance.yaml
-kubectl get devices.devices.kubeedge.io -n default -o wide
-kubectl get device automotive-thermal-ecu-001 -n default -o yaml
-```
-
-Inspect the accepted property values; the API server may prune fields not supported by the installed CRD:
-
-```bash
-kubectl get device automotive-thermal-ecu-001 -n default \
-  -o jsonpath='{.spec.nodeName}{"\n"}{range .spec.properties[*]}{.name}{" => "}{.desired.value}{"\n"}{end}'
-```
-
-### 5. Verify the registered device configuration
-
-```bash
-# CLOUD VM
-kubectl get devicemodel automotive-thermal-ecu -n default -o yaml
-kubectl get device automotive-thermal-ecu-001 -n default -o yaml
-kubectl get crd devicestatuses.devices.kubeedge.io
-kubectl get devicestatuses.devices.kubeedge.io -n default -o yaml
-```
-
-Check the `Device` resource's seven desired values and correct edge-node assignment. The `DeviceStatus` resource, when present, represents runtime state; absence of reported values is **expected without a mapper**. Successfully applying a device is **not proof** of live measurement or cloud-edge twin convergence.
-
-### 6. Modify desired device-twin properties
-
-From the **CloudCore VM**, change the cooling target from `55.0` to `60.0` °C:
-
-```bash
-kubectl patch device automotive-thermal-ecu-001 -n default \
-  --type=json \
-  -p='[{"op":"replace","path":"/spec/properties/14/desired/value","value":"60.0"}]'
-
-kubectl get device automotive-thermal-ecu-001 -n default \
-  -o jsonpath='{.spec.properties[14].name}{": "}{.spec.properties[14].desired.value}{"\n"}'
-```
-
-Expected: `targetCoolantTemperature: 60.0`. Index `14` refers to the **fifteenth property** in the supplied YAML. These positional JSON patches must be revised if the properties are reordered.
-
-As another example, select `ECO` mode, sample every 30 seconds and request lower pump/fan targets:
-
-```bash
-kubectl patch device automotive-thermal-ecu-001 -n default \
-  --type=json \
-  -p='[
-    {"op":"replace","path":"/spec/properties/12/desired/value","value":"ECO"},
-    {"op":"replace","path":"/spec/properties/13/desired/value","value":"30"},
-    {"op":"replace","path":"/spec/properties/16/desired/value","value":"1200"},
-    {"op":"replace","path":"/spec/properties/18/desired/value","value":"20"}
-  ]'
-
-kubectl get device automotive-thermal-ecu-001 -n default -o yaml
-```
-
-These commands modify **cloud-side desired values only**. Without the mapper, there is no simulated peripheral ECU consuming commands or publishing actual readings. Step 7 will validate cloud-to-edge desired-state propagation, edge-side application and reported-state synchronization separately.
-
-**Optional reset** (reapply the original sample):
-
-```bash
-kubectl apply -f device-instance.yaml
-```
-
-**Optional cleanup** (delete the instance before its model):
-
-```bash
-kubectl delete -f device-instance.yaml
-kubectl delete -f device-model.yaml
-```
-
----
-
-## What's Next?
-
-- Explore the [ContinuumX README](https://github.com/neotera-eu/continuumx) for the full feature set.
-- Browse the [KubeEdge documentation](https://kubeedge.io/docs/) for device management, MQTT integration, and EdgeMesh.
-- Try deploying your own workloads with `nodeName: u2deb-edge` or using node labels and `nodeSelector`.
-- Review the troubleshooting appendices in the install guide for common edge-cloud connectivity issues.
-
-## TODOS
-- Verify pods networking
-- Validate the digital twins infrastrure.
-- Provide a digital twins example for the baseline version.
+For underlying platform capabilities, see [ContinuumX](https://github.com/neotera-eu/continuumx) and the [KubeEdge documentation](https://kubeedge.io/docs/).
