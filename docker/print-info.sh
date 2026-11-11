@@ -28,6 +28,7 @@ edge_ready=no
 demo_ready=no
 fw_ready=no
 mapper_ready=no
+ecu_ready=no
 device_ready=no
 # Prefer compose health when present, else treat running as ready.
 mqtt_health=$(podman inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' \
@@ -47,10 +48,13 @@ curl -sfS --max-time 2 "http://${HOST}:3000/api/health" >/dev/null 2>&1 \
 curl -sfS --max-time 2 "http://${HOST}:3100/api/health" >/dev/null 2>&1 \
   && fw_ready=yes || true
 podman exec continuumx-playground_edge_1 \
-  systemctl is-active --quiet continuumx-virtual-ethernet 2>/dev/null \
+  systemctl is-active --quiet continuumx-virtual-ethernet-mapper 2>/dev/null \
   && mapper_ready=yes || true
+podman exec continuumx-playground_edge_1 \
+  systemctl is-active --quiet continuumx-virtual-ecu 2>/dev/null \
+  && ecu_ready=yes || true
 podman exec continuumx-playground_cloud_1 \
-  kubectl get device automotive-thermal-ecu-001 -n default >/dev/null 2>&1 \
+  kubectl get device automotive-thermal-ecu-fw-001 -n default >/dev/null 2>&1 \
   && device_ready=yes || true
 
 cat <<EOF
@@ -65,8 +69,9 @@ cat <<EOF
     edge             : container=${edge_ctr}  ready=${edge_ready}
     servicebus-demo  : container=${demo_ctr}  ready=${demo_ready}
     firmware-catalog : container=${fw_ctr}  ready=${fw_ready}
-    mapper           : continuumx-virtual-ethernet  ready=${mapper_ready}
-    device-twin      : automotive-thermal-ecu-001  ready=${device_ready}
+    virtual-ecu      : continuumx-virtual-ecu  ready=${ecu_ready}
+    mapper           : continuumx-virtual-ethernet-mapper  ready=${mapper_ready}
+    device-twin      : automotive-thermal-ecu-fw-001  ready=${device_ready}
     (first cold start usually finishes in about 1-2 minutes)
 
 ------------------------------------------------------------
@@ -90,20 +95,30 @@ cat <<EOF
   Download     http://${HOST}:3100/api/download?name=<name>&version=<ver>
 
 ------------------------------------------------------------
-  Device twin (automotive thermal ECU)
+  Device twin + Virtual ECU firmware update
 ------------------------------------------------------------
-  Mapper runs on edge (DMI): continuumx-virtual-ethernet.service
+  Edge services:
+    continuumx-virtual-ecu.service
+    continuumx-virtual-ethernet-mapper.service
+
+  ECU health (inside edge):
+    curl --unix-socket /run/continuumx-virtual-ecu/ecu.sock http://localhost/v1/health
 
   On cloud:
     kubectl get devicemodel,device,devicestatus -n default
-    kubectl get device automotive-thermal-ecu-001 -n default -o json \\
-      | jq -r '.spec.properties[] | select(.name=="targetCoolantTemperature") | .desired.value'
-    kubectl get devicestatus automotive-thermal-ecu-001 -n default -o json \\
-      | jq -r '.status.twins[]? | select(.propertyName=="targetCoolantTemperature") |
+    kubectl get device automotive-thermal-ecu-fw-001 -n default -o json \\
+      | jq -r '.spec.properties[] | select(.name=="firmwareVersion") | .desired.value'
+    kubectl get devicestatus automotive-thermal-ecu-fw-001 -n default -o json \\
+      | jq -r '.status.twins[]? | select(.propertyName=="firmwareVersion") |
           "observedDesired=\\(.observedDesired.value) reported=\\(.reported.value)"'
 
-  Patch desired coolant target to 63.0:
-    kubectl patch device automotive-thermal-ecu-001 -n default --type=json \\
+  Patch desired firmware to sim-1.1.0 (index 10 = firmwareVersion):
+    kubectl patch device automotive-thermal-ecu-fw-001 -n default --type=json \\
+      -p='[{"op":"test","path":"/spec/properties/10/name","value":"firmwareVersion"},
+           {"op":"replace","path":"/spec/properties/10/desired/value","value":"sim-1.1.0"}]'
+
+  Patch desired coolant target to 63.0 (index 14):
+    kubectl patch device automotive-thermal-ecu-fw-001 -n default --type=json \\
       -p='[{"op":"test","path":"/spec/properties/14/name","value":"targetCoolantTemperature"},
            {"op":"replace","path":"/spec/properties/14/desired/value","value":"63.0"}]'
 

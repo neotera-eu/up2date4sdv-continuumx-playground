@@ -1,4 +1,4 @@
-# Edge image: ContinuumX EdgeCore + containerd.
+# Edge image: ContinuumX EdgeCore + Virtual ECU + mapper + containerd.
 #
 # You may change:
 # - ContinuumX / cxadm download URL and version
@@ -12,7 +12,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     container=docker
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      systemd systemd-sysv dbus ca-certificates curl gnupg nano \
+      systemd systemd-sysv dbus ca-certificates curl gnupg nano python3 \
       iproute2 iptables conntrack socat ethtool kmod sudo procps crun \
       openssh-server \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -93,15 +93,40 @@ RUN useradd -m -s /bin/bash -G sudo user \
     && printf 'user ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/user \
     && chmod 440 /etc/sudoers.d/user
 
-# Virtual Ethernet mapper (automotive device-twin demo). Uses EdgeCore DMI.
-RUN install -d -m 0755 /opt/continuumx/virtual-ethernet /etc/continuumx/virtual-ethernet
-COPY bin/mapper/linux-amd64/virtual-ethernet /opt/continuumx/virtual-ethernet/virtual-ethernet
-COPY config/virtual-ethernet.yaml /etc/continuumx/virtual-ethernet/config.yaml
-COPY deploy/systemd/continuumx-virtual-ethernet.service \
-     /etc/systemd/system/continuumx-virtual-ethernet.service
-RUN chmod 755 /opt/continuumx/virtual-ethernet/virtual-ethernet \
-    && chmod 644 /etc/continuumx/virtual-ethernet/config.yaml \
-    && chmod 644 /etc/systemd/system/continuumx-virtual-ethernet.service
+# Virtual Thermal ECU + staged firmware candidates + activation helper.
+RUN install -d -m 0755 \
+      /opt/continuumx/virtual-thermal-ecu \
+      /opt/continuumx/firmware-candidates \
+      /usr/local/libexec/continuumx
+COPY bin/ecu/linux-amd64/virtual-thermal-ecu-sim-1.0.0 \
+     /opt/continuumx/firmware-candidates/virtual-thermal-ecu-sim-1.0.0
+COPY bin/ecu/linux-amd64/virtual-thermal-ecu-sim-1.1.0 \
+     /opt/continuumx/firmware-candidates/virtual-thermal-ecu-sim-1.1.0
+COPY deploy/libexec/activate-virtual-ecu \
+     /usr/local/libexec/continuumx/activate-virtual-ecu
+COPY deploy/systemd/continuumx-virtual-ecu.service \
+     /etc/systemd/system/continuumx-virtual-ecu.service
+RUN install -o root -g root -m 0755 \
+      /opt/continuumx/firmware-candidates/virtual-thermal-ecu-sim-1.0.0 \
+      /opt/continuumx/virtual-thermal-ecu/virtual-thermal-ecu \
+    && chmod 0755 /opt/continuumx/firmware-candidates/virtual-thermal-ecu-sim-1.0.0 \
+                  /opt/continuumx/firmware-candidates/virtual-thermal-ecu-sim-1.1.0 \
+                  /usr/local/libexec/continuumx/activate-virtual-ecu \
+    && chmod 0644 /etc/systemd/system/continuumx-virtual-ecu.service
+
+# Virtual Ethernet mapper (DMI <-> Virtual ECU).
+RUN install -d -m 0755 \
+      /opt/continuumx/virtual-ethernet-mapper \
+      /etc/continuumx/virtual-ethernet-mapper
+COPY bin/mapper/linux-amd64/virtual-ethernet-mapper \
+     /opt/continuumx/virtual-ethernet-mapper/virtual-ethernet-mapper
+COPY config/virtual-ethernet-mapper.yaml \
+     /etc/continuumx/virtual-ethernet-mapper/config.yaml
+COPY deploy/systemd/continuumx-virtual-ethernet-mapper.service \
+     /etc/systemd/system/continuumx-virtual-ethernet-mapper.service
+RUN chmod 755 /opt/continuumx/virtual-ethernet-mapper/virtual-ethernet-mapper \
+    && chmod 644 /etc/continuumx/virtual-ethernet-mapper/config.yaml \
+    && chmod 644 /etc/systemd/system/continuumx-virtual-ethernet-mapper.service
 
 COPY docker/edge/crun-wrap /usr/local/bin/crun-wrap
 COPY docker/edge/cx-bootstrap*.sh docker/edge/cx-import-images.sh /usr/local/sbin/
@@ -111,8 +136,10 @@ RUN chmod 755 /usr/local/sbin/cx-bootstrap*.sh /usr/local/sbin/cx-import-images.
     && ln -sf /usr/lib/systemd/system/containerd.service /etc/systemd/system/multi-user.target.wants/containerd.service \
     && ln -sf /etc/systemd/system/cx-bootstrap.service /etc/systemd/system/multi-user.target.wants/cx-bootstrap.service \
     && ln -sf /usr/lib/systemd/system/ssh.service /etc/systemd/system/multi-user.target.wants/ssh.service \
-    && ln -sf /etc/systemd/system/continuumx-virtual-ethernet.service \
-         /etc/systemd/system/multi-user.target.wants/continuumx-virtual-ethernet.service \
+    && ln -sf /etc/systemd/system/continuumx-virtual-ecu.service \
+         /etc/systemd/system/multi-user.target.wants/continuumx-virtual-ecu.service \
+    && ln -sf /etc/systemd/system/continuumx-virtual-ethernet-mapper.service \
+         /etc/systemd/system/multi-user.target.wants/continuumx-virtual-ethernet-mapper.service \
     && mkdir -p /etc/systemd/system/sockets.target.wants \
     && ln -sf /usr/lib/systemd/system/dbus.socket /etc/systemd/system/sockets.target.wants/dbus.socket \
     && printf '%s\n' 'PasswordAuthentication yes' > /etc/ssh/sshd_config.d/password.conf \
