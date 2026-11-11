@@ -14,7 +14,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     K8S_VERSION=1.32.13-1.1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      systemd systemd-sysv dbus ca-certificates curl gnupg nano \
+      systemd systemd-sysv dbus ca-certificates curl gnupg nano jq \
       iproute2 iptables conntrack socat ethtool kmod openssl sudo procps crun \
       openssh-server \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -125,10 +125,11 @@ RUN useradd -m -s /bin/bash -G sudo user \
     && printf 'user ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/user \
     && chmod 440 /etc/sudoers.d/user
 
-COPY crun-wrap /usr/local/bin/crun-wrap
-COPY kubeadm-config.yaml.tmpl /opt/cx/kubeadm-config.yaml.tmpl
-COPY cx-bootstrap*.sh cx-import-images.sh /usr/local/sbin/
-COPY cx-bootstrap.service /etc/systemd/system/cx-bootstrap.service
+COPY docker/cloud/crun-wrap /usr/local/bin/crun-wrap
+COPY docker/cloud/kubeadm-config.yaml.tmpl /opt/cx/kubeadm-config.yaml.tmpl
+COPY manifests/samples/devices/ /opt/cx/devices/
+COPY docker/cloud/cx-bootstrap*.sh docker/cloud/cx-import-images.sh /usr/local/sbin/
+COPY docker/cloud/cx-bootstrap.service /etc/systemd/system/cx-bootstrap.service
 RUN chmod 755 /usr/local/sbin/cx-bootstrap*.sh /usr/local/sbin/cx-import-images.sh /usr/local/bin/crun-wrap \
     && mkdir -p /etc/systemd/system/multi-user.target.wants \
     && ln -sf /usr/lib/systemd/system/containerd.service /etc/systemd/system/multi-user.target.wants/containerd.service \

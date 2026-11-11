@@ -38,7 +38,7 @@ RUN curl -fsSL -o /tmp/cni.tgz \
     && tar -C /opt/cni/bin -xzf /tmp/cni.tgz \
     && rm /tmp/cni.tgz
 
-COPY containerd-net.conflist /etc/cni/net.d/10-containerd-net.conflist
+COPY docker/edge/containerd-net.conflist /etc/cni/net.d/10-containerd-net.conflist
 
 RUN curl -fsSL https://github.com/neotera-eu/continuumx/releases/download/v1.23.0-cx/cxadm-v1.23.0-linux-amd64.tar.gz \
       -o /tmp/cxadm.tgz \
@@ -93,14 +93,26 @@ RUN useradd -m -s /bin/bash -G sudo user \
     && printf 'user ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/user \
     && chmod 440 /etc/sudoers.d/user
 
-COPY crun-wrap /usr/local/bin/crun-wrap
-COPY cx-bootstrap*.sh cx-import-images.sh /usr/local/sbin/
-COPY cx-bootstrap.service /etc/systemd/system/cx-bootstrap.service
+# Virtual Ethernet mapper (automotive device-twin demo). Uses EdgeCore DMI.
+RUN install -d -m 0755 /opt/continuumx/virtual-ethernet /etc/continuumx/virtual-ethernet
+COPY bin/mapper/linux-amd64/virtual-ethernet /opt/continuumx/virtual-ethernet/virtual-ethernet
+COPY config/virtual-ethernet.yaml /etc/continuumx/virtual-ethernet/config.yaml
+COPY deploy/systemd/continuumx-virtual-ethernet.service \
+     /etc/systemd/system/continuumx-virtual-ethernet.service
+RUN chmod 755 /opt/continuumx/virtual-ethernet/virtual-ethernet \
+    && chmod 644 /etc/continuumx/virtual-ethernet/config.yaml \
+    && chmod 644 /etc/systemd/system/continuumx-virtual-ethernet.service
+
+COPY docker/edge/crun-wrap /usr/local/bin/crun-wrap
+COPY docker/edge/cx-bootstrap*.sh docker/edge/cx-import-images.sh /usr/local/sbin/
+COPY docker/edge/cx-bootstrap.service /etc/systemd/system/cx-bootstrap.service
 RUN chmod 755 /usr/local/sbin/cx-bootstrap*.sh /usr/local/sbin/cx-import-images.sh /usr/local/bin/crun-wrap \
     && mkdir -p /etc/systemd/system/multi-user.target.wants \
     && ln -sf /usr/lib/systemd/system/containerd.service /etc/systemd/system/multi-user.target.wants/containerd.service \
     && ln -sf /etc/systemd/system/cx-bootstrap.service /etc/systemd/system/multi-user.target.wants/cx-bootstrap.service \
     && ln -sf /usr/lib/systemd/system/ssh.service /etc/systemd/system/multi-user.target.wants/ssh.service \
+    && ln -sf /etc/systemd/system/continuumx-virtual-ethernet.service \
+         /etc/systemd/system/multi-user.target.wants/continuumx-virtual-ethernet.service \
     && mkdir -p /etc/systemd/system/sockets.target.wants \
     && ln -sf /usr/lib/systemd/system/dbus.socket /etc/systemd/system/sockets.target.wants/dbus.socket \
     && printf '%s\n' 'PasswordAuthentication yes' > /etc/ssh/sshd_config.d/password.conf \

@@ -29,7 +29,9 @@ services:
       start_period: 5s
 
   cloud:
-    build: ./cloud
+    build:
+      context: ..
+      dockerfile: docker/cloud/Dockerfile
     image: continuumx-playground-cloud:1.23
     hostname: u2deb-cloud
     privileged: true
@@ -74,7 +76,9 @@ services:
       start_period: 180s
 
   edge:
-    build: ./edge
+    build:
+      context: ..
+      dockerfile: docker/edge/Dockerfile
     image: continuumx-playground-edge:1.23
     hostname: u2deb-edge
     privileged: true

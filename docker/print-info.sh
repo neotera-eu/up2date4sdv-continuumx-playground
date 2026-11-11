@@ -25,6 +25,8 @@ mqtt_ready=no
 cloud_ready=no
 edge_ready=no
 demo_ready=no
+mapper_ready=no
+device_ready=no
 # Prefer compose health when present, else treat running as ready.
 mqtt_health=$(podman inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' \
   continuumx-playground_mqtt-broker_1 2>/dev/null || true)
@@ -40,6 +42,12 @@ podman exec continuumx-playground_edge_1 systemctl is-active --quiet edgecore 2>
   && edge_ready=yes || true
 curl -sfS --max-time 2 "http://${HOST}:3000/api/health" >/dev/null 2>&1 \
   && demo_ready=yes || true
+podman exec continuumx-playground_edge_1 \
+  systemctl is-active --quiet continuumx-virtual-ethernet 2>/dev/null \
+  && mapper_ready=yes || true
+podman exec continuumx-playground_cloud_1 \
+  kubectl get device automotive-thermal-ecu-001 -n default >/dev/null 2>&1 \
+  && device_ready=yes || true
 
 cat <<EOF
 
@@ -52,7 +60,9 @@ cat <<EOF
     cloud            : container=${cloud_ctr}  ready=${cloud_ready}
     edge             : container=${edge_ctr}  ready=${edge_ready}
     servicebus-demo  : container=${demo_ctr}  ready=${demo_ready}
-    (first cold start usually finishes in about 1 minute)
+    mapper           : continuumx-virtual-ethernet  ready=${mapper_ready}
+    device-twin      : automotive-thermal-ecu-001  ready=${device_ready}
+    (first cold start usually finishes in about 1-2 minutes)
 
 ------------------------------------------------------------
   SSH  (user / password)
@@ -65,6 +75,24 @@ cat <<EOF
     sudo -i
     kubectl get nodes
     kubectl get pods -A
+
+------------------------------------------------------------
+  Device twin (automotive thermal ECU)
+------------------------------------------------------------
+  Mapper runs on edge (DMI): continuumx-virtual-ethernet.service
+
+  On cloud:
+    kubectl get devicemodel,device,devicestatus -n default
+    kubectl get device automotive-thermal-ecu-001 -n default -o json \\
+      | jq -r '.spec.properties[] | select(.name=="targetCoolantTemperature") | .desired.value'
+    kubectl get devicestatus automotive-thermal-ecu-001 -n default -o json \\
+      | jq -r '.status.twins[]? | select(.propertyName=="targetCoolantTemperature") |
+          "observedDesired=\\(.observedDesired.value) reported=\\(.reported.value)"'
+
+  Patch desired coolant target to 63.0:
+    kubectl patch device automotive-thermal-ecu-001 -n default --type=json \\
+      -p='[{"op":"test","path":"/spec/properties/14/name","value":"targetCoolantTemperature"},
+           {"op":"replace","path":"/spec/properties/14/desired/value","value":"63.0"}]'
 
 ------------------------------------------------------------
   ServiceBus demo (Next.js)

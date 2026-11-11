@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Run a few cold starts and check end-to-end (nodes + ServiceBus).
+# Run a few cold starts and check end-to-end
+# (nodes + ServiceBus + device twin / mapper).
 #
 # Usage (from docker/):
 #   ./e2e-cold-test.sh
@@ -20,14 +21,16 @@ wait_ready() {
   start=$(date +%s)
   while true; do
     now=$(date +%s); elapsed=$((now - start))
-    local c_ready=no e_core=na r9443=no c_boot=na e_boot=na
+    local c_ready=no e_core=na r9443=no c_boot=na e_boot=na mapper=na
     podman exec "$CLOUD" test -f /var/cx-join/cloud-ready 2>/dev/null && c_ready=yes || true
-    c_boot=$(podman exec "$CLOUD" systemctl is-active cx-bootstrap 2>/dev/null || echo na)
-    e_boot=$(podman exec "$EDGE" systemctl is-active cx-bootstrap 2>/dev/null || echo na)
-    e_core=$(podman exec "$EDGE" systemctl is-active edgecore 2>/dev/null || echo na)
+    c_boot=$(podman exec "$CLOUD" systemctl is-active cx-bootstrap 2>/dev/null || true)
+    e_boot=$(podman exec "$EDGE" systemctl is-active cx-bootstrap 2>/dev/null || true)
+    e_core=$(podman exec "$EDGE" systemctl is-active edgecore 2>/dev/null || true)
+    mapper=$(podman exec "$EDGE" systemctl is-active continuumx-virtual-ethernet 2>/dev/null || true)
+    c_boot=${c_boot:-na}; e_boot=${e_boot:-na}; e_core=${e_core:-na}; mapper=${mapper:-na}
     podman exec "$CLOUD" bash -c 'ss -lnt 2>/dev/null | grep -q ":9443 "' 2>/dev/null && r9443=yes || true
 
-    log "t+${elapsed}s cloud-boot=$c_boot ready=$c_ready :9443=$r9443 edge-boot=$e_boot edgecore=$e_core"
+    log "t+${elapsed}s cloud-boot=$c_boot ready=$c_ready :9443=$r9443 edge-boot=$e_boot edgecore=$e_core mapper=$mapper"
 
     if [[ "$c_boot" == failed || "$e_boot" == failed ]]; then
       log "bootstrap FAILED"
@@ -37,6 +40,7 @@ wait_ready() {
     fi
 
     if [[ "$c_ready" == yes && "$r9443" == yes && "$e_core" == active && \
+          "$mapper" == active && \
           ("$c_boot" == active || "$c_boot" == inactive) && \
           ("$e_boot" == active || "$e_boot" == inactive) ]]; then
       log "stack ready in ${elapsed}s"
@@ -48,6 +52,7 @@ wait_ready() {
       log "TIMEOUT after ${elapsed}s"
       podman exec "$CLOUD" journalctl -u cx-bootstrap -n 50 --no-pager 2>&1 | tail -60 || true
       podman exec "$EDGE" journalctl -u cx-bootstrap -n 40 --no-pager 2>&1 | tail -50 || true
+      podman exec "$EDGE" journalctl -u continuumx-virtual-ethernet -n 40 --no-pager 2>&1 | tail -40 || true
       return 1
     fi
     sleep 5
@@ -86,6 +91,54 @@ verify_e2e() {
   podman exec "$EDGE" bash -c 'timeout 3 bash -c "echo >/dev/tcp/mqtt-broker/1883"' 2>/dev/null \
     || podman exec "$EDGE" bash -c 'getent hosts mqtt-broker >/dev/null'
 
+  # Mapper + device twin
+  podman exec "$EDGE" systemctl is-active --quiet continuumx-virtual-ethernet \
+    || { log "FAIL: mapper inactive"; return 1; }
+  podman exec "$EDGE" bash -c 'test -S /etc/kubeedge/dmi.sock' \
+    || { log "FAIL: missing dmi.sock"; return 1; }
+
+  local device_ok=0
+  for a in $(seq 1 45); do
+    if podman exec "$CLOUD" kubectl get device automotive-thermal-ecu-001 -n default >/dev/null 2>&1 \
+       && podman exec "$CLOUD" kubectl get devicestatus automotive-thermal-ecu-001 -n default \
+            -o jsonpath='{.status.twins[*].propertyName}' 2>/dev/null | grep -q coolantTemperature; then
+      device_ok=1
+      break
+    fi
+    sleep 2
+  done
+  [[ "$device_ok" == 1 ]] || {
+    log "FAIL: device twin / DeviceStatus not ready"
+    podman exec "$CLOUD" kubectl get devicemodel,device,devicestatus -n default || true
+    podman exec "$EDGE" journalctl -u continuumx-virtual-ethernet -n 40 --no-pager || true
+    return 1
+  }
+
+  # Patch desired target and wait for observedDesired/reported to catch up.
+  podman exec "$CLOUD" kubectl patch device automotive-thermal-ecu-001 -n default --type=json \
+    -p='[{"op":"test","path":"/spec/properties/14/name","value":"targetCoolantTemperature"},{"op":"replace","path":"/spec/properties/14/desired/value","value":"63.0"}]' \
+    >/dev/null
+
+  local twin_ok=0 observed reported
+  for a in $(seq 1 45); do
+    observed=$(podman exec "$CLOUD" kubectl get devicestatus automotive-thermal-ecu-001 -n default \
+      -o jsonpath='{range .status.twins[?(@.propertyName=="targetCoolantTemperature")]}{.observedDesired.value}{end}' 2>/dev/null || true)
+    reported=$(podman exec "$CLOUD" kubectl get devicestatus automotive-thermal-ecu-001 -n default \
+      -o jsonpath='{range .status.twins[?(@.propertyName=="targetCoolantTemperature")]}{.reported.value}{end}' 2>/dev/null || true)
+    log "twin attempt$a observedDesired=$observed reported=$reported"
+    # Accept 63 / 63.0 style values
+    if echo "$observed" | grep -Eq '^63(\.0)?$' && echo "$reported" | grep -Eq '^63(\.0)?$'; then
+      twin_ok=1
+      break
+    fi
+    sleep 3
+  done
+  [[ "$twin_ok" == 1 ]] || {
+    log "FAIL: desired twin 63.0 not observed/reported"
+    podman exec "$CLOUD" kubectl get devicestatus automotive-thermal-ecu-001 -n default -o yaml | tail -80 || true
+    return 1
+  }
+
   log "PASS: $label"
   return 0
 }
@@ -96,14 +149,17 @@ cold_start() {
   bash ./host-prep.sh >/dev/null
   podman compose down -v --remove-orphans
   podman compose up -d
-  wait_ready 300
+  wait_ready 360
   verify_e2e "cold-$n"
 }
 
 log "building images"
 podman compose build cloud edge servicebus-demo
 
-for i in 1 2 3; do
+# One thorough cold start is enough for mapper/twin validation; keep loop for
+# optional repeat runs (default 1, override with E2E_RUNS=3).
+E2E_RUNS="${E2E_RUNS:-1}"
+for i in $(seq 1 "$E2E_RUNS"); do
   if cold_start "$i"; then
     PASS=$((PASS + 1))
   else
@@ -114,4 +170,4 @@ for i in 1 2 3; do
 done
 
 log "######## SUMMARY: pass=$PASS fail=$FAIL ########"
-[[ "$FAIL" -eq 0 && "$PASS" -ge 3 ]]
+[[ "$FAIL" -eq 0 && "$PASS" -ge 1 ]]

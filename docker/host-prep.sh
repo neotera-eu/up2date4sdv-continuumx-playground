@@ -67,10 +67,11 @@ ask_yes_no() {
 }
 
 find_host_conflicts() {
+  local names_csv
   [[ -r "$HOSTS_FILE" ]] || return 0
   # Whole-token match on hostnames (field 2+), ignore comments/blank.
-  CONFLICT_NAMES_CSV="$(IFS=,; echo "${CONFLICT_NAMES[*]}")" \
-  awk -v names="$CONFLICT_NAMES_CSV" '
+  names_csv="$(IFS=,; echo "${CONFLICT_NAMES[*]}")"
+  awk -v names="$names_csv" '
     BEGIN {
       n = split(names, want, ",")
       for (i = 1; i <= n; i++) bad[want[i]] = 1

@@ -46,4 +46,6 @@ for _ in $(seq 1 30); do
 done
 ss -lnt | grep -q ':9443 '
 
+# Publish ready so the edge can join; device manifests are applied in step 09
+# after node u2deb-edge becomes Ready.
 touch /var/cx-join/cloud-ready
