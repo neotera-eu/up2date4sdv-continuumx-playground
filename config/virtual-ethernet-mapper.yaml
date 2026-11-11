@@ -1,5 +1,5 @@
 grpc_server:
-  socket_path: /etc/kubeedge/virtual-ethernet.sock
+  socket_path: /etc/kubeedge/virtual-ethernet-mapper.sock
 common:
   name: Virtual-Ethernet-mapper
   version: v1.23.0

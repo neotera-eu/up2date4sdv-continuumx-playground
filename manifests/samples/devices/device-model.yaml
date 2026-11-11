@@ -3,12 +3,12 @@
 apiVersion: devices.kubeedge.io/v1beta1
 kind: DeviceModel
 metadata:
-  name: automotive-thermal-ecu
+  name: automotive-thermal-ecu-fw-demo
   namespace: default
   labels:
     app: up2date4sdv-demo
     domain: automotive
-    version: v1
+    version: fw-demo-v1
   annotations:
     description: Simulated vehicle thermal-management peripheral ECU connected to the central ECU
     manufacturer: ContinuumX Playground
@@ -85,9 +85,9 @@ spec:
     type: STRING
     accessMode: ReadOnly
   - name: firmwareVersion
-    description: Peripheral ECU firmware version
+    description: Desired virtual ECU firmware version (write triggers local activation; reported is running version)
     type: STRING
-    accessMode: ReadOnly
+    accessMode: ReadWrite
   - name: serialNumber
     description: Peripheral ECU serial number
     type: STRING

@@ -1,0 +1,24 @@
+[Unit]
+Description=ContinuumX Virtual Ethernet Automotive ECU Mapper
+Documentation=https://github.com/kubeedge/mapper-framework
+Wants=edgecore.service continuumx-virtual-ecu.service network-online.target
+After=edgecore.service continuumx-virtual-ecu.service network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/continuumx/virtual-ethernet-mapper
+ExecStartPre=/usr/bin/test -S /etc/kubeedge/dmi.sock
+ExecStartPre=/usr/bin/test -S /run/continuumx-virtual-ecu/ecu.sock
+ExecStart=/opt/continuumx/virtual-ethernet-mapper/virtual-ethernet-mapper --config-file=/etc/continuumx/virtual-ethernet-mapper/config.yaml --v=2
+Restart=always
+RestartSec=10
+TimeoutStopSec=15
+KillSignal=SIGINT
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=continuumx-virtual-ethernet-mapper
+
+[Install]
+WantedBy=multi-user.target

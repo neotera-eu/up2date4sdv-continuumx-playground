@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# Called by the Virtual Ethernet Mapper when firmwareVersion.desired changes.
+# Only explicitly staged local versions are accepted. No downloads or flash writes.
+set -euo pipefail
+
+VERSION=${1:-}
+case "$VERSION" in
+  sim-1.0.0|sim-1.1.0) ;;
+  *) echo "Unsupported firmware version: $VERSION" >&2; exit 2 ;;
+esac
+[[ $(id -u) == 0 ]] || { echo 'Must run as root (mapper reference unit uses root)' >&2; exit 1; }
+
+CANDIDATES=/opt/continuumx/firmware-candidates
+ACTIVE=/opt/continuumx/virtual-thermal-ecu/virtual-thermal-ecu
+SOCKET=/run/continuumx-virtual-ecu/ecu.sock
+SERVICE=continuumx-virtual-ecu.service
+LOCK=/run/lock/continuumx-virtual-ecu-update.lock
+
+# Serialize updates across mapper restarts and competing client instances.
+exec 9>"$LOCK"
+flock -x 9
+
+# Verify the live process, not just the installed executable on disk.
+health_version() {
+  local json
+  json=$(curl -fsS --max-time 1 --unix-socket "$SOCKET" \
+    http://localhost/v1/health 2>/dev/null) || return 1
+  python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("firmwareVersion", "") if d.get("status")=="ok" and d.get("protocolVersion")==1 else "")' \
+    <<< "$json" 2>/dev/null
+}
+
+CURRENT=$(health_version || true)
+if [[ "$CURRENT" == "$VERSION" ]]; then
+  printf 'Firmware %s already running; no restart needed\n' "$VERSION"
+  exit 0
+fi
+
+SOURCE="$CANDIDATES/virtual-thermal-ecu-$VERSION"
+[[ -f "$SOURCE" && -x "$SOURCE" && ! -L "$SOURCE" ]] || { echo "Missing or invalid staged candidate $SOURCE" >&2; exit 1; }
+[[ $(stat -c '%u' "$SOURCE") == 0 ]] || { echo "Candidate must be owned by root" >&2; exit 1; }
+if (( (8#$(stat -c '%a' "$SOURCE") & 8#022) != 0 )); then
+  echo "Candidate must not be group/world writable" >&2; exit 1
+fi
+EMBEDDED=$(/usr/bin/env "$SOURCE" -version)
+[[ "$EMBEDDED" == "$VERSION" ]] || { echo "Candidate reports $EMBEDDED, expected $VERSION" >&2; exit 1; }
+
+# The supplied candidates are for this demonstration. Their staging directory
+# must be writable only by trusted administrators; version checking is not a signature.
+mkdir -p "$(dirname "$ACTIVE")"
+BACKUP="$ACTIVE.previous"
+if [[ -f "$ACTIVE" ]]; then
+  cp -p "$ACTIVE" "$BACKUP"
+fi
+install -m 0755 "$SOURCE" "$ACTIVE.pending"
+mv -f "$ACTIVE.pending" "$ACTIVE"  # Atomic replacement on the same filesystem.
+
+if systemctl restart "$SERVICE" 9>&-; then
+  for attempt in {1..24}; do
+    if [[ $(health_version || true) == "$VERSION" ]]; then
+      printf 'Firmware %s activated and verified via ECU API\n' "$VERSION"
+      exit 0
+    fi
+    sleep 0.25
+  done
+fi
+
+echo "Firmware activation failed; restoring previous executable" >&2
+if [[ -f "$BACKUP" ]]; then
+  cp -p "$BACKUP" "$ACTIVE.rollback"
+  mv -f "$ACTIVE.rollback" "$ACTIVE"
+  systemctl restart "$SERVICE" 9>&- || true
+fi
+exit 1

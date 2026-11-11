@@ -1,0 +1,23 @@
+[Unit]
+Description=ContinuumX Virtual Thermal ECU Firmware Simulator
+After=local-fs.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+RuntimeDirectory=continuumx-virtual-ecu
+RuntimeDirectoryMode=0755
+StateDirectory=continuumx-virtual-ecu
+StateDirectoryMode=0700
+ExecStart=/opt/continuumx/virtual-thermal-ecu/virtual-thermal-ecu --socket /run/continuumx-virtual-ecu/ecu.sock --state-file /var/lib/continuumx-virtual-ecu/state.json
+Restart=always
+RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=continuumx-virtual-ecu
+
+[Install]
+WantedBy=multi-user.target

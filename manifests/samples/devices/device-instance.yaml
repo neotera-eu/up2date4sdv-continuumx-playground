@@ -4,7 +4,7 @@
 apiVersion: devices.kubeedge.io/v1beta1
 kind: Device
 metadata:
-  name: automotive-thermal-ecu-001
+  name: automotive-thermal-ecu-fw-001
   namespace: default
   labels:
     app: up2date4sdv-demo
@@ -15,18 +15,20 @@ metadata:
       the central ECU
     asset-id: THERM-ECU-001
     vehicle-subsystem: cooling
-    network-interface: Simulated automotive Ethernet link; no physical peripheral
+    network-interface: Logical virtual-ethernet transport over local Unix socket; no physical peripheral
       is connected
 spec:
   deviceModelRef:
-    name: automotive-thermal-ecu
+    name: automotive-thermal-ecu-fw-demo
   nodeName: u2deb-edge
   protocol:
     protocolName: virtual-ethernet
     configData:
       deviceId: THERM-ECU-001
       simulator: true
-      endpoint: virtual-ethernet://automotive-thermal-ecu-001
+      socketPath: /run/continuumx-virtual-ecu/ecu.sock
+      firmwareUpdaterPath: /usr/local/libexec/continuumx/activate-virtual-ecu
+      endpoint: virtual-ethernet://automotive-thermal-ecu-fw-001
       updateIntervalSeconds: 10
       transport: simulated-ethernet
   stateReport:
@@ -124,14 +126,19 @@ spec:
         source: simulator
         signal: faultCode
   - name: firmwareVersion
+    desired:
+      value: sim-1.0.0
+      metadata:
+        source: cloud
+        reason: initial-firmware
     reportToCloud: true
     visitors:
       protocolName: virtual-ethernet
       configData:
         source: simulator
         signal: firmwareVersion
-    collectCycle: 60000
-    reportCycle: 60000
+    collectCycle: 10000
+    reportCycle: 10000
   - name: serialNumber
     reportToCloud: true
     visitors:
@@ -251,3 +258,7 @@ spec:
     description: Change telemetry sampling interval
     propertyNames:
     - samplingInterval
+  - name: updateFirmware
+    description: Request a locally staged virtual ECU firmware version
+    propertyNames:
+    - firmwareVersion
