@@ -1,7 +1,7 @@
 # ContinuumX playground helpers.
 #
 # make build              build all images
-# make build cloud        build one service (mqtt-broker|cloud|edge|servicebus-demo)
+# make build cloud        build one service (mqtt-broker|cloud|edge|servicebus-demo|firmware-catalog)
 # make run                start all + show connection info
 # make run edge           start one or more services
 # make down               stop containers
@@ -14,7 +14,7 @@ COMPOSE      ?= podman compose
 COMPOSE_FILE ?= compose.yaml
 export COMPOSE_FILE
 
-SERVICES := mqtt-broker cloud edge servicebus-demo
+SERVICES := mqtt-broker cloud edge servicebus-demo firmware-catalog
 ARGS := $(filter-out build run down delete prune info revert help,$(MAKECMDGOALS))
 
 .PHONY: help build run down delete prune info revert $(SERVICES)

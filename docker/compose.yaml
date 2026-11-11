@@ -125,6 +125,31 @@ services:
     depends_on:
       - edge
 
+  # Firmware catalog for OTA (upload + download by name/version).
+  firmware-catalog:
+    build: ./firmware-catalog
+    image: continuumx-playground-firmware-catalog:1.23
+    hostname: firmware-catalog
+    restart: unless-stopped
+    networks:
+      - cxnet
+    ports:
+      - "3100:3100"
+    volumes:
+      - cx-firmware-data:/data/firmwares
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3100/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 25s
+
 networks:
   cxnet:
     driver: bridge
@@ -138,3 +163,4 @@ volumes:
   cx-cloud-playground:
   cx-edge-containerd:
   cx-edge-kubeedge:
+  cx-firmware-data:

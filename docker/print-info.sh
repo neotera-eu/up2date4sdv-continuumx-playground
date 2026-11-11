@@ -19,12 +19,14 @@ mqtt_ctr=$(svc_status continuumx-playground_mqtt-broker_1)
 cloud_ctr=$(svc_status continuumx-playground_cloud_1)
 edge_ctr=$(svc_status continuumx-playground_edge_1)
 demo_ctr=$(svc_status continuumx-playground_servicebus-demo_1)
+fw_ctr=$(svc_status continuumx-playground_firmware-catalog_1)
 
 # Ready = service is usable (not only that the container process is up).
 mqtt_ready=no
 cloud_ready=no
 edge_ready=no
 demo_ready=no
+fw_ready=no
 mapper_ready=no
 device_ready=no
 # Prefer compose health when present, else treat running as ready.
@@ -42,6 +44,8 @@ podman exec continuumx-playground_edge_1 systemctl is-active --quiet edgecore 2>
   && edge_ready=yes || true
 curl -sfS --max-time 2 "http://${HOST}:3000/api/health" >/dev/null 2>&1 \
   && demo_ready=yes || true
+curl -sfS --max-time 2 "http://${HOST}:3100/api/health" >/dev/null 2>&1 \
+  && fw_ready=yes || true
 podman exec continuumx-playground_edge_1 \
   systemctl is-active --quiet continuumx-virtual-ethernet 2>/dev/null \
   && mapper_ready=yes || true
@@ -60,6 +64,7 @@ cat <<EOF
     cloud            : container=${cloud_ctr}  ready=${cloud_ready}
     edge             : container=${edge_ctr}  ready=${edge_ready}
     servicebus-demo  : container=${demo_ctr}  ready=${demo_ready}
+    firmware-catalog : container=${fw_ctr}  ready=${fw_ready}
     mapper           : continuumx-virtual-ethernet  ready=${mapper_ready}
     device-twin      : automotive-thermal-ecu-001  ready=${device_ready}
     (first cold start usually finishes in about 1-2 minutes)
@@ -75,6 +80,14 @@ cat <<EOF
     sudo -i
     kubectl get nodes
     kubectl get pods -A
+
+------------------------------------------------------------
+  Firmware catalog (OTA store)
+------------------------------------------------------------
+  UI           http://${HOST}:3100
+  Health       http://${HOST}:3100/api/health
+  List         http://${HOST}:3100/api/firmwares
+  Download     http://${HOST}:3100/api/download?name=<name>&version=<ver>
 
 ------------------------------------------------------------
   Device twin (automotive thermal ECU)
