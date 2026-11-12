@@ -675,9 +675,9 @@ sequenceDiagram
     Mapper->>ECU: systemd restart virtual ECU service
     Mapper->>ECU: GET /v1/health (verify new process)
     ECU-->>Mapper: sim-1.1.0
-    Mapper->>Twin: Batched DMI status: reported = sim-1.1.0
+    Mapper->>Twin: Batched DMI status - reported = sim-1.1.0
     Twin->>Cloud: DeviceStatus synchronization
-    Note over User,Cloud: A kubectl get is independent; it reads the latest stored snapshot
+    Note over User,Cloud: A kubectl get is independent and <br/>reads the latest stored snapshot
 ```
 
 The diagram shows the successful update path. A failed activation should leave `reported` at the **actual running version**; it must not be set to the desired version merely to acknowledge receipt of the command.
