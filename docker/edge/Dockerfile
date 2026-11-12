@@ -93,26 +93,31 @@ RUN useradd -m -s /bin/bash -G sudo user \
     && printf 'user ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/user \
     && chmod 440 /etc/sudoers.d/user
 
-# Virtual Thermal ECU + staged firmware candidates + activation helper.
+# Virtual Thermal ECU — no firmware binaries baked in.
+# Boot (sim-1.0.0) and OTA (sim-1.1.0) both download from firmware-catalog
+# (which seeds bin/ecu/linux-amd64/). Candidates dir is only a download cache.
 RUN install -d -m 0755 \
       /opt/continuumx/virtual-thermal-ecu \
       /opt/continuumx/firmware-candidates \
-      /usr/local/libexec/continuumx
-COPY bin/ecu/linux-amd64/virtual-thermal-ecu-sim-1.0.0 \
-     /opt/continuumx/firmware-candidates/virtual-thermal-ecu-sim-1.0.0
-COPY bin/ecu/linux-amd64/virtual-thermal-ecu-sim-1.1.0 \
-     /opt/continuumx/firmware-candidates/virtual-thermal-ecu-sim-1.1.0
+      /usr/local/libexec/continuumx \
+      /etc/continuumx
 COPY deploy/libexec/activate-virtual-ecu \
+     /usr/local/libexec/continuumx/activate-virtual-ecu.local
+COPY docker/edge/fetch-ecu-from-catalog.sh \
+     /usr/local/libexec/continuumx/fetch-ecu-from-catalog.sh
+COPY docker/edge/activate-virtual-ecu-with-catalog.sh \
      /usr/local/libexec/continuumx/activate-virtual-ecu
-COPY deploy/systemd/continuumx-virtual-ecu.service \
+COPY docker/edge/continuumx-virtual-ecu.service \
      /etc/systemd/system/continuumx-virtual-ecu.service
-RUN install -o root -g root -m 0755 \
-      /opt/continuumx/firmware-candidates/virtual-thermal-ecu-sim-1.0.0 \
-      /opt/continuumx/virtual-thermal-ecu/virtual-thermal-ecu \
-    && chmod 0755 /opt/continuumx/firmware-candidates/virtual-thermal-ecu-sim-1.0.0 \
-                  /opt/continuumx/firmware-candidates/virtual-thermal-ecu-sim-1.1.0 \
-                  /usr/local/libexec/continuumx/activate-virtual-ecu \
-    && chmod 0644 /etc/systemd/system/continuumx-virtual-ecu.service
+RUN printf '%s\n' \
+      'FIRMWARE_CATALOG_URL=http://firmware-catalog:3100' \
+      'FIRMWARE_CATALOG_NAME=virtual-thermal-ecu' \
+      >/etc/continuumx/firmware-catalog.env \
+    && chmod 0644 /etc/continuumx/firmware-catalog.env \
+                  /etc/systemd/system/continuumx-virtual-ecu.service \
+    && chmod 0755 /usr/local/libexec/continuumx/activate-virtual-ecu.local \
+                  /usr/local/libexec/continuumx/fetch-ecu-from-catalog.sh \
+                  /usr/local/libexec/continuumx/activate-virtual-ecu
 
 # Virtual Ethernet mapper (DMI <-> Virtual ECU).
 RUN install -d -m 0755 \

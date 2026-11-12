@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Run cold start(s) and check end-to-end
-# (nodes + ServiceBus + Virtual ECU + mapper + firmware twin OTA).
+# Full cold-start e2e:
+#   nodes + ServiceBus + Virtual ECU + mapper + CloudCore-initiated firmware OTA
+#   (catalog download: sim-1.0.0 boot → sim-1.1.0 update → optional rollback).
 #
 # Usage (from docker/):
 #   ./e2e-cold-test.sh
@@ -21,6 +22,44 @@ ecu_health_version() {
     --unix-socket /run/continuumx-virtual-ecu/ecu.sock \
     http://localhost/v1/health 2>/dev/null \
     | python3 -c 'import sys,json; print(json.load(sys.stdin).get("firmwareVersion",""))' 2>/dev/null || true
+}
+
+device_desired_fw() {
+  podman exec "$CLOUD" kubectl get device "$DEVICE" -n default -o json 2>/dev/null \
+    | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+for p in d.get("spec",{}).get("properties",[]):
+  if p.get("name")=="firmwareVersion":
+    print((p.get("desired") or {}).get("value",""))
+    break
+' 2>/dev/null || true
+}
+
+twin_fw_field() {
+  # $1 = observedDesired | reported
+  local field="$1"
+  podman exec "$CLOUD" kubectl get devicestatus "$DEVICE" -n default -o json 2>/dev/null \
+    | python3 -c '
+import json,sys
+field=sys.argv[1]
+d=json.load(sys.stdin)
+for t in d.get("status",{}).get("twins",[]) or []:
+  if t.get("propertyName")=="firmwareVersion":
+    print((t.get(field) or {}).get("value",""))
+    break
+' "$field" 2>/dev/null || true
+}
+
+fw_property_index() {
+  podman exec "$CLOUD" kubectl get device "$DEVICE" -n default -o json 2>/dev/null \
+    | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+for i,p in enumerate(d.get("spec",{}).get("properties",[])):
+  if p.get("name")=="firmwareVersion":
+    print(i); break
+' 2>/dev/null || true
 }
 
 wait_ready() {
@@ -70,6 +109,112 @@ wait_ready() {
   done
 }
 
+assert_catalog_seeded() {
+  local catalog_ok=0 catalog_json
+  for a in $(seq 1 30); do
+    catalog_json="$(curl -fsS --max-time 5 http://127.0.0.1:3100/api/firmwares 2>/dev/null || true)"
+    if echo "$catalog_json" | grep -q 'virtual-thermal-ecu' \
+       && echo "$catalog_json" | grep -q 'sim-1.0.0' \
+       && echo "$catalog_json" | grep -q 'sim-1.1.0'; then
+      catalog_ok=1
+      break
+    fi
+    sleep 2
+  done
+  [[ "$catalog_ok" == 1 ]] || {
+    log "FAIL: firmware-catalog missing virtual-thermal-ecu sim-1.0.0 and sim-1.1.0"
+    echo "$catalog_json" | head -c 800 || true
+    return 1
+  }
+  # Edge must reach the catalog on the compose network (CloudCore OTA download path).
+  podman exec "$EDGE" curl -fsS --max-time 5 \
+    "http://firmware-catalog:3100/api/download?name=virtual-thermal-ecu&version=sim-1.1.0" \
+    -o /dev/null \
+    || { log "FAIL: edge cannot download sim-1.1.0 from firmware-catalog"; return 1; }
+  log "catalog seeded + edge can download via http://firmware-catalog:3100"
+}
+
+# Full CloudCore → Device twin → mapper → catalog → ECU → DeviceStatus path.
+cloud_initiated_firmware_ota() {
+  local target="$1"
+  local fw_idx desired observed reported ecu_ver ok stamp_before stamp_after
+
+  fw_idx="$(fw_property_index)"
+  [[ -n "$fw_idx" ]] || { log "FAIL: cannot resolve firmwareVersion property index"; return 1; }
+
+  desired="$(device_desired_fw)"
+  observed="$(twin_fw_field observedDesired)"
+  reported="$(twin_fw_field reported)"
+  ecu_ver="$(ecu_health_version)"
+  log "pre-OTA state desired=${desired} observedDesired=${observed} reported=${reported} ecu=${ecu_ver}"
+
+  stamp_before="$(podman exec "$EDGE" sh -c 'wc -l < /var/log/continuumx-catalog-fetch.log 2>/dev/null || echo 0')"
+  stamp_before="${stamp_before//[^0-9]/}"
+  stamp_before="${stamp_before:-0}"
+
+  log "CloudCore patch: Device/${DEVICE} firmwareVersion.desired → ${target} (index ${fw_idx})"
+  podman exec "$CLOUD" kubectl patch device "$DEVICE" -n default --type=json \
+    -p="[{\"op\":\"test\",\"path\":\"/spec/properties/${fw_idx}/name\",\"value\":\"firmwareVersion\"},{\"op\":\"replace\",\"path\":\"/spec/properties/${fw_idx}/desired/value\",\"value\":\"${target}\"}]" \
+    >/dev/null
+
+  # Spec must reflect the cloud write immediately.
+  desired="$(device_desired_fw)"
+  [[ "$desired" == "$target" ]] || {
+    log "FAIL: Device.spec desired is '${desired}', expected '${target}' after cloud patch"
+    return 1
+  }
+  log "Device.spec.desired=${desired} (cloud write accepted)"
+
+  ok=0
+  for a in $(seq 1 90); do
+    desired="$(device_desired_fw)"
+    observed="$(twin_fw_field observedDesired)"
+    reported="$(twin_fw_field reported)"
+    ecu_ver="$(ecu_health_version)"
+    log "fw[${target}] attempt$a desired=${desired} observedDesired=${observed} reported=${reported} ecu=${ecu_ver}"
+    if [[ "$desired" == "$target" \
+       && "$observed" == "$target" \
+       && "$reported" == "$target" \
+       && "$ecu_ver" == "$target" ]]; then
+      ok=1
+      break
+    fi
+    sleep 2
+  done
+
+  [[ "$ok" == 1 ]] || {
+    log "FAIL: CloudCore-initiated OTA to ${target} did not converge"
+    podman exec "$CLOUD" kubectl get device "$DEVICE" -n default -o yaml | tail -80 || true
+    podman exec "$CLOUD" kubectl get devicestatus "$DEVICE" -n default -o yaml | tail -100 || true
+    podman exec "$EDGE" journalctl -u continuumx-virtual-ecu -n 50 --no-pager || true
+    podman exec "$EDGE" journalctl -u continuumx-virtual-ethernet-mapper -n 80 --no-pager || true
+    podman exec "$EDGE" cat /var/log/continuumx-catalog-fetch.log 2>/dev/null || true
+    return 1
+  }
+
+  # Catalog fetch must have recorded this version after the cloud patch.
+  stamp_after="$(podman exec "$EDGE" sh -c 'wc -l < /var/log/continuumx-catalog-fetch.log 2>/dev/null || echo 0')"
+  stamp_after="${stamp_after//[^0-9]/}"
+  stamp_after="${stamp_after:-0}"
+  if ! podman exec "$EDGE" grep -q "fetched virtual-thermal-ecu@${target}" \
+      /var/log/continuumx-catalog-fetch.log; then
+    log "FAIL: missing catalog fetch stamp for ${target}"
+    podman exec "$EDGE" cat /var/log/continuumx-catalog-fetch.log 2>/dev/null || true
+    return 1
+  fi
+  if [[ "$stamp_after" -le "$stamp_before" ]]; then
+    log "FAIL: catalog fetch log did not grow after cloud patch to ${target} (before=${stamp_before} after=${stamp_after})"
+    return 1
+  fi
+  if ! podman exec "$EDGE" test -x \
+      "/opt/continuumx/firmware-candidates/virtual-thermal-ecu-${target}"; then
+    log "FAIL: catalog download did not stage candidate for ${target}"
+    return 1
+  fi
+
+  log "PASS CloudCore OTA → ${target} (desired=observedDesired=reported=ecu, catalog fetch ok)"
+}
+
 verify_e2e() {
   local label="$1"
   log "=== verify: $label ==="
@@ -79,7 +224,13 @@ verify_e2e() {
   nodes=$(podman exec "$CLOUD" kubectl get nodes --no-headers 2>/dev/null | wc -l)
   [[ "$nodes" -ge 2 ]] || { log "FAIL: expected 2 nodes, got $nodes"; return 1; }
 
-  podman exec "$EDGE" getent hosts cloud u2deb-cloud mqtt-broker >/dev/null
+  # CloudCore must be up (Router :9443 already gated; also check deployment/pod).
+  podman exec "$CLOUD" kubectl -n kubeedge get deploy cloudcore >/dev/null 2>&1 \
+    || podman exec "$CLOUD" kubectl get pods -A 2>/dev/null | grep -qi cloudcore \
+    || { log "FAIL: cloudcore not found in cluster"; podman exec "$CLOUD" kubectl get pods -A || true; return 1; }
+  log "CloudCore present in cluster"
+
+  podman exec "$EDGE" getent hosts cloud u2deb-cloud mqtt-broker firmware-catalog >/dev/null
   podman exec "$EDGE" bash -c 'grep -q "mqttMode: 2" /etc/kubeedge/config/edgecore.yaml'
   podman exec "$EDGE" bash -c 'grep -A4 "serviceBus:" /etc/kubeedge/config/edgecore.yaml | grep -q "enable: true"'
 
@@ -115,14 +266,21 @@ verify_e2e() {
   local ver
   ver="$(ecu_health_version)"
   log "ecu health firmwareVersion=${ver}"
-  [[ "$ver" == "sim-1.0.0" || "$ver" == "sim-1.1.0" ]] \
-    || { log "FAIL: unexpected ECU version '${ver}'"; return 1; }
+  [[ "$ver" == "sim-1.0.0" ]] \
+    || { log "FAIL: expected boot baseline sim-1.0.0, got '${ver}'"; return 1; }
+  if ! podman exec "$EDGE" grep -q 'fetched virtual-thermal-ecu@sim-1.0.0' \
+      /var/log/continuumx-catalog-fetch.log; then
+    log "FAIL: missing catalog fetch stamp for boot baseline sim-1.0.0"
+    podman exec "$EDGE" cat /var/log/continuumx-catalog-fetch.log 2>/dev/null || true
+    return 1
+  fi
+  log "boot sim-1.0.0 confirmed via catalog download"
 
   local device_ok=0
   for a in $(seq 1 45); do
     if podman exec "$CLOUD" kubectl get device "$DEVICE" -n default >/dev/null 2>&1 \
        && podman exec "$CLOUD" kubectl get devicestatus "$DEVICE" -n default \
-            -o jsonpath='{.status.twins[*].propertyName}' 2>/dev/null | grep -q coolantTemperature; then
+            -o jsonpath='{.status.twins[*].propertyName}' 2>/dev/null | grep -q firmwareVersion; then
       device_ok=1
       break
     fi
@@ -135,12 +293,32 @@ verify_e2e() {
     return 1
   }
 
-  # Coolant twin patch (index 14).
+  # Initial firmware twin must already show sim-1.0.0 from the cloud side.
+  local init_ok=0 desired observed reported
+  for a in $(seq 1 45); do
+    desired="$(device_desired_fw)"
+    observed="$(twin_fw_field observedDesired)"
+    reported="$(twin_fw_field reported)"
+    log "fw baseline attempt$a desired=${desired} observedDesired=${observed} reported=${reported}"
+    if [[ "$desired" == "sim-1.0.0" && "$reported" == "sim-1.0.0" ]]; then
+      init_ok=1
+      break
+    fi
+    sleep 2
+  done
+  [[ "$init_ok" == 1 ]] || {
+    log "FAIL: cloud twin not reporting boot firmware sim-1.0.0"
+    podman exec "$CLOUD" kubectl get device,devicestatus "$DEVICE" -n default -o yaml | tail -120 || true
+    return 1
+  }
+  log "cloud twin baseline: desired/reported=sim-1.0.0"
+
+  # Coolant twin patch (index 14) — proves DeviceTwin path before firmware OTA.
   podman exec "$CLOUD" kubectl patch device "$DEVICE" -n default --type=json \
     -p='[{"op":"test","path":"/spec/properties/14/name","value":"targetCoolantTemperature"},{"op":"replace","path":"/spec/properties/14/desired/value","value":"63.0"}]' \
     >/dev/null
 
-  local twin_ok=0 observed reported
+  local twin_ok=0
   for a in $(seq 1 45); do
     observed=$(podman exec "$CLOUD" kubectl get devicestatus "$DEVICE" -n default \
       -o jsonpath='{range .status.twins[?(@.propertyName=="targetCoolantTemperature")]}{.observedDesired.value}{end}' 2>/dev/null || true)
@@ -159,33 +337,14 @@ verify_e2e() {
     return 1
   }
 
-  # Firmware OTA: desired sim-1.1.0 -> ECU health + reported twin.
-  log "patching firmwareVersion desired=sim-1.1.0"
-  podman exec "$CLOUD" kubectl patch device "$DEVICE" -n default --type=json \
-    -p='[{"op":"test","path":"/spec/properties/10/name","value":"firmwareVersion"},{"op":"replace","path":"/spec/properties/10/desired/value","value":"sim-1.1.0"}]' \
-    >/dev/null
+  assert_catalog_seeded || return 1
 
-  local fw_ok=0 fw_reported ecu_ver
-  for a in $(seq 1 60); do
-    ecu_ver="$(ecu_health_version)"
-    fw_reported=$(podman exec "$CLOUD" kubectl get devicestatus "$DEVICE" -n default \
-      -o jsonpath='{range .status.twins[?(@.propertyName=="firmwareVersion")]}{.reported.value}{end}' 2>/dev/null || true)
-    log "fw attempt$a ecu=${ecu_ver} reported=${fw_reported}"
-    if [[ "$ecu_ver" == "sim-1.1.0" && "$fw_reported" == "sim-1.1.0" ]]; then
-      fw_ok=1
-      break
-    fi
-    sleep 2
-  done
-  [[ "$fw_ok" == 1 ]] || {
-    log "FAIL: firmware OTA to sim-1.1.0 did not complete"
-    podman exec "$EDGE" journalctl -u continuumx-virtual-ecu -n 40 --no-pager || true
-    podman exec "$EDGE" journalctl -u continuumx-virtual-ethernet-mapper -n 50 --no-pager || true
-    podman exec "$CLOUD" kubectl get device,devicestatus "$DEVICE" -n default -o yaml | tail -100 || true
-    return 1
-  }
+  # --- Full firmware update cycle initiated from the cloud ---
+  cloud_initiated_firmware_ota sim-1.1.0 || return 1
+  cloud_initiated_firmware_ota sim-1.0.0 || return 1
+  cloud_initiated_firmware_ota sim-1.1.0 || return 1
 
-  log "PASS: $label"
+  log "PASS: $label (CloudCore firmware OTA cycle complete)"
   return 0
 }
 

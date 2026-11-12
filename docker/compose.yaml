@@ -96,8 +96,15 @@ services:
       - "2223:22"
       - "3000:3000"
     depends_on:
-      - cloud
-      - mqtt-broker
+      cloud:
+        condition: service_started
+      mqtt-broker:
+        condition: service_started
+      firmware-catalog:
+        condition: service_healthy
+    environment:
+      FIRMWARE_CATALOG_URL: http://firmware-catalog:3100
+      FIRMWARE_CATALOG_NAME: virtual-thermal-ecu
     tmpfs:
       - /run
       - /run/lock
@@ -125,9 +132,11 @@ services:
     depends_on:
       - edge
 
-  # Firmware catalog for OTA (upload + download by name/version).
+  # Firmware catalog: seeds bin/ecu sim-1.0.0 + sim-1.1.0 for edge OTA download.
   firmware-catalog:
-    build: ./firmware-catalog
+    build:
+      context: ..
+      dockerfile: docker/firmware-catalog/Dockerfile
     image: continuumx-playground-firmware-catalog:1.23
     hostname: firmware-catalog
     restart: unless-stopped

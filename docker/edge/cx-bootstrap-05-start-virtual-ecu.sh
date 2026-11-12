@@ -1,5 +1,8 @@
 #!/bin/bash
 # Start the official Virtual Thermal ECU (Unix-socket HTTP API).
+# Firmware comes only from firmware-catalog (ExecStartPre + this explicit fetch).
+
+/usr/local/libexec/continuumx/fetch-ecu-from-catalog.sh sim-1.0.0 --install-active
 
 systemctl enable continuumx-virtual-ecu.service
 systemctl restart continuumx-virtual-ecu.service

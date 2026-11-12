@@ -112,10 +112,15 @@ cat <<EOF
       | jq -r '.status.twins[]? | select(.propertyName=="firmwareVersion") |
           "observedDesired=\\(.observedDesired.value) reported=\\(.reported.value)"'
 
+  Firmware source: catalog only (bin/ecu published at :3100).
+  Boot downloads sim-1.0.0; twin OTA downloads sim-1.1.0. No baked edge candidates.
   Patch desired firmware to sim-1.1.0 (index 10 = firmwareVersion):
     kubectl patch device automotive-thermal-ecu-fw-001 -n default --type=json \\
       -p='[{"op":"test","path":"/spec/properties/10/name","value":"firmwareVersion"},
            {"op":"replace","path":"/spec/properties/10/desired/value","value":"sim-1.1.0"}]'
+  Catalog packages:
+    http://${HOST}:3100/api/download?name=virtual-thermal-ecu&version=sim-1.0.0
+    http://${HOST}:3100/api/download?name=virtual-thermal-ecu&version=sim-1.1.0
 
   Patch desired coolant target to 63.0 (index 14):
     kubectl patch device automotive-thermal-ecu-fw-001 -n default --type=json \\
