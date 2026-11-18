@@ -1,0 +1,48 @@
+name: Validate ContinuumX Playground
+
+"on":
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-runtime:
+    name: Verify multi-ECU runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out public Playground repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install validation dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends python3 gcc file
+
+      - name: Require Linux AMD64 and native tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Linux
+          test "$(uname -m)" = x86_64
+          for tool in python3 cc file sha256sum; do
+            command -v "$tool"
+          done
+
+      - name: Check verifier shell syntax
+        run: bash -n scripts/prepare-playground-release.sh
+
+      - name: Run offline release verifier tests
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Verify committed multi-ECU runtime
+        run: bash scripts/prepare-playground-release.sh --verify

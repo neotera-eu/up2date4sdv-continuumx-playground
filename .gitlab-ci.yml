@@ -1,0 +1,28 @@
+# Runs on a GitLab Runner with Docker/container executor access.
+# Tests only the publicly committed Playground runtime.
+
+stages:
+  - validate
+
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - when: never
+
+validate_playground_runtime:
+  stage: validate
+  image: ubuntu:24.04
+  timeout: 15m
+  variables:
+    DEBIAN_FRONTEND: noninteractive
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y --no-install-recommends python3 gcc file
+  script:
+    - test "$(uname -s)" = Linux
+    - test "$(uname -m)" = x86_64
+    - for tool in python3 cc file sha256sum; do command -v "$tool"; done
+    - bash -n scripts/prepare-playground-release.sh
+    - python3 -m unittest discover -s tests -v
+    - bash scripts/prepare-playground-release.sh --verify

@@ -25,7 +25,8 @@ The VM release provides **precompiled Linux AMD64 executables**. No source code,
 8. [Use the device twins](#use-the-device-twins)
 9. [Exercise: independent firmware updates](#exercise-independent-firmware-updates)
 10. [Run the NGINX edge workload](#run-the-nginx-edge-workload)
-11. [Scope](#scope)
+11. [Development and validation](#development-and-validation)
+12. [Scope](#scope)
 
 **Reading order:** The early sections explain the architecture. All terminal commands for devices begin after VM setup and installation in [Deploy both automotive ECUs](#deploy-both-automotive-ecus).
 
@@ -842,6 +843,38 @@ The NGINX pod should be `Running` on `u2deb-edge`. When finished:
 ```bash
 kubectl delete -f nginx-edge.yaml
 ```
+
+## Development and validation
+
+The Playground contains precompiled, standalone Linux AMD64 runtime artifacts. Users and contributors **do not need the private mapper source repository, Go SDK, or a Kubernetes cluster** to run the local release-integrity checks. Run these checks from the Playground repository root on a Linux AMD64 machine:
+
+```bash
+# Check the release verifier's shell syntax.
+bash -n scripts/prepare-playground-release.sh
+
+# Exercise the verifier with isolated test fixtures (no production ECU required).
+python3 -m unittest discover -s tests -v
+
+# Verify the actual committed runtime artifacts, provenance metadata and hashes.
+./scripts/prepare-playground-release.sh --verify
+```
+
+The tests require Python 3, a C compiler (`cc`, typically provided by `gcc`), `file`, `sha256sum`, and a Linux x86-64 host. The unit tests compile small temporary ELF fixtures and do not run the virtual ECUs or connect to EdgeCore. Their test class may **skip** on hosts lacking prerequisites, so do not interpret skipped tests as successful verification. The final command independently checks the **actual distributed release**: its exact inventory, existing `SHA256SUMS`, ELF architecture, firmware-version identities, executable permissions, and `RELEASE-METADATA.txt`. It is **read-only**; do not regenerate checksums to hide a failed verification.
+
+### Continuous integration: GitHub and GitLab
+
+The repository provides equivalent checks for both hosting platforms:
+
+| Platform | Configuration | When it runs | Where to inspect results |
+|---|---|---|---|
+| GitHub Actions | `.github/workflows/validate-playground.yml` | Pull requests targeting `main`, pushes to `main`, and manual runs | **Actions** tab and pull-request checks |
+| GitLab CI/CD | `.gitlab-ci.yml` | Merge requests targeting the GitLab default branch and pushes to that branch | **Build to  Pipelines** and merge-request pipelines |
+
+Each pipeline uses Linux AMD64, installs the test prerequisites, rejects the wrong runner architecture, executes the Python unit tests, and verifies the checked-in runtime artifacts. No credentials or repository secrets are required for these checks. Both hosts execute CI independently; successful CI on one platform does not imply that the other has run.
+
+GitHub Actions must be enabled for the repository. On GitLab, an available runner capable of executing the `ubuntu:24.04` container image is required; check that CI/CD pipelines are enabled on your GitLab server. To **block merges** when checks fail, configure a required status check in GitHub branch protection/rulesets and require successful pipelines in GitLab's merge settings. Merely defining the workflow files reports failures but does not automatically enforce those merge policies.
+
+These tests verify the **distribution and verification code**, not end-to-end orchestration. For independent firmware-update, DMI reporting, and ECU isolation acceptance tests on the reference VMs, follow the [Multi-ECU VM validation guide](doc/multi-ecu-vm-validation.md).
 
 ## Scope
 
