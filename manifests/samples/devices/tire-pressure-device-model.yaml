@@ -1,0 +1,136 @@
+# Independent tire-pressure ECU model; deploy alongside the thermal model.
+apiVersion: devices.kubeedge.io/v1beta1
+kind: DeviceModel
+metadata:
+  name: automotive-tire-pressure-ecu-fw-demo
+  namespace: default
+  labels:
+    app: up2date4sdv-demo
+    domain: automotive
+    device-type: tire-pressure
+  annotations:
+    description: Virtual tire-pressure monitoring ECU with four wheel sensors and
+      leak demonstration
+spec:
+  protocol: virtual-ethernet
+  protocolConfigData:
+    simulator: true
+    transport: simulated-ethernet
+    deviceType: tire-pressure
+  properties:
+  - name: frontLeftPressure
+    description: Front-left tire gauge pressure
+    type: FLOAT
+    accessMode: ReadOnly
+    minimum: '0'
+    maximum: '500'
+    unit: kPa
+  - name: frontRightPressure
+    description: Front-right tire gauge pressure
+    type: FLOAT
+    accessMode: ReadOnly
+    minimum: '0'
+    maximum: '500'
+    unit: kPa
+  - name: rearLeftPressure
+    description: Rear-left tire gauge pressure
+    type: FLOAT
+    accessMode: ReadOnly
+    minimum: '0'
+    maximum: '500'
+    unit: kPa
+  - name: rearRightPressure
+    description: Rear-right tire gauge pressure
+    type: FLOAT
+    accessMode: ReadOnly
+    minimum: '0'
+    maximum: '500'
+    unit: kPa
+  - name: frontLeftTemperature
+    description: Front-left tire air temperature
+    type: FLOAT
+    accessMode: ReadOnly
+    minimum: '-40'
+    maximum: '125'
+    unit: Celsius
+  - name: frontRightTemperature
+    description: Front-right tire air temperature
+    type: FLOAT
+    accessMode: ReadOnly
+    minimum: '-40'
+    maximum: '125'
+    unit: Celsius
+  - name: rearLeftTemperature
+    description: Rear-left tire air temperature
+    type: FLOAT
+    accessMode: ReadOnly
+    minimum: '-40'
+    maximum: '125'
+    unit: Celsius
+  - name: rearRightTemperature
+    description: Rear-right tire air temperature
+    type: FLOAT
+    accessMode: ReadOnly
+    minimum: '-40'
+    maximum: '125'
+    unit: Celsius
+  - name: lowPressureWarning
+    description: One or more tires below configured threshold
+    type: BOOLEAN
+    accessMode: ReadOnly
+  - name: lowPressureWheels
+    description: Comma-separated wheel codes or NONE
+    type: STRING
+    accessMode: ReadOnly
+  - name: supplyVoltage
+    description: Simulated ECU supply voltage
+    type: FLOAT
+    accessMode: ReadOnly
+    minimum: '0'
+    maximum: '32'
+    unit: V
+  - name: firmwareVersion
+    description: Desired firmware version; reported value is currently running firmware
+    type: STRING
+    accessMode: ReadWrite
+  - name: serialNumber
+    description: Virtual tire-pressure ECU identifier
+    type: STRING
+    accessMode: ReadOnly
+  - name: pressureThreshold
+    description: Pressure threshold for low-pressure warning
+    type: FLOAT
+    accessMode: ReadWrite
+    minimum: '150'
+    maximum: '300'
+    unit: kPa
+  - name: ambientTemperature
+    description: Simulated ambient temperature
+    type: FLOAT
+    accessMode: ReadWrite
+    minimum: '-20'
+    maximum: '70'
+    unit: Celsius
+  - name: leakEnabled
+    description: Enable controlled virtual tire leak
+    type: BOOLEAN
+    accessMode: ReadWrite
+  - name: leakWheel
+    description: 'Affected wheel: FL, FR, RL, RR or NONE'
+    type: STRING
+    accessMode: ReadWrite
+  - name: leakRate
+    description: Simulated leak rate
+    type: FLOAT
+    accessMode: ReadWrite
+    minimum: '0'
+    maximum: '10'
+    unit: kPa/min
+  - name: samplingInterval
+    description: Stored example configuration; Device collectCycle controls actual
+      DMI reporting
+    type: INT
+    accessMode: ReadWrite
+    minimum: '1'
+    maximum: '3600'
+    unit: s

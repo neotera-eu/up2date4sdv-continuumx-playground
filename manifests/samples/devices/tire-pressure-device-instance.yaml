@@ -1,0 +1,270 @@
+# All collectCycle and reportCycle values are milliseconds.
+apiVersion: devices.kubeedge.io/v1beta1
+kind: Device
+metadata:
+  name: automotive-tire-pressure-ecu-fw-001
+  namespace: default
+  labels:
+    app: up2date4sdv-demo
+    device-type: automotive-tire-pressure-ecu
+    vehicle-domain: tire-pressure
+  annotations:
+    description: Four-wheel virtual TPMS ECU running separately from the thermal ECU
+    vehicle-subsystem: tire-pressure-monitoring
+spec:
+  deviceModelRef:
+    name: automotive-tire-pressure-ecu-fw-demo
+  nodeName: u2deb-edge
+  protocol:
+    protocolName: virtual-ethernet
+    configData:
+      deviceType: tire-pressure
+      deviceId: TPMS-ECU-001
+      simulator: true
+      socketPath: /run/continuumx-virtual-tire-ecu/ecu.sock
+      firmwareUpdaterPath: /usr/local/libexec/continuumx/activate-virtual-tire-ecu
+      endpoint: virtual-ethernet://automotive-tire-pressure-ecu-fw-001
+      transport: simulated-ethernet
+  stateReport:
+    reportToCloud: true
+    reportCycle: 60000
+  properties:
+  - name: frontLeftPressure
+    reportToCloud: true
+    collectCycle: 10000
+    reportCycle: 10000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: frontLeftPressure
+        dataType: float
+  - name: frontRightPressure
+    reportToCloud: true
+    collectCycle: 10000
+    reportCycle: 10000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: frontRightPressure
+        dataType: float
+  - name: rearLeftPressure
+    reportToCloud: true
+    collectCycle: 10000
+    reportCycle: 10000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: rearLeftPressure
+        dataType: float
+  - name: rearRightPressure
+    reportToCloud: true
+    collectCycle: 10000
+    reportCycle: 10000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: rearRightPressure
+        dataType: float
+  - name: frontLeftTemperature
+    reportToCloud: true
+    collectCycle: 20000
+    reportCycle: 20000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: frontLeftTemperature
+        dataType: float
+  - name: frontRightTemperature
+    reportToCloud: true
+    collectCycle: 20000
+    reportCycle: 20000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: frontRightTemperature
+        dataType: float
+  - name: rearLeftTemperature
+    reportToCloud: true
+    collectCycle: 20000
+    reportCycle: 20000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: rearLeftTemperature
+        dataType: float
+  - name: rearRightTemperature
+    reportToCloud: true
+    collectCycle: 20000
+    reportCycle: 20000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: rearRightTemperature
+        dataType: float
+  - name: lowPressureWarning
+    reportToCloud: true
+    collectCycle: 10000
+    reportCycle: 10000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: lowPressureWarning
+        dataType: boolean
+  - name: lowPressureWheels
+    reportToCloud: true
+    collectCycle: 10000
+    reportCycle: 10000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: lowPressureWheels
+        dataType: string
+  - name: supplyVoltage
+    reportToCloud: true
+    collectCycle: 30000
+    reportCycle: 30000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: supplyVoltage
+        dataType: float
+  - name: firmwareVersion
+    reportToCloud: true
+    collectCycle: 10000
+    reportCycle: 10000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: firmwareVersion
+        dataType: string
+    desired:
+      value: sim-1.0.0
+      metadata:
+        source: cloud
+        reason: initial-configuration
+  - name: serialNumber
+    reportToCloud: true
+    collectCycle: 60000
+    reportCycle: 60000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: serialNumber
+        dataType: string
+  - name: pressureThreshold
+    reportToCloud: true
+    collectCycle: 20000
+    reportCycle: 20000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: pressureThreshold
+        dataType: float
+    desired:
+      value: '210.0'
+      metadata:
+        source: cloud
+        reason: initial-configuration
+  - name: ambientTemperature
+    reportToCloud: true
+    collectCycle: 20000
+    reportCycle: 20000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: ambientTemperature
+        dataType: float
+    desired:
+      value: '25.0'
+      metadata:
+        source: cloud
+        reason: initial-configuration
+  - name: leakEnabled
+    reportToCloud: true
+    collectCycle: 20000
+    reportCycle: 20000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: leakEnabled
+        dataType: boolean
+    desired:
+      value: 'false'
+      metadata:
+        source: cloud
+        reason: initial-configuration
+  - name: leakWheel
+    reportToCloud: true
+    collectCycle: 20000
+    reportCycle: 20000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: leakWheel
+        dataType: string
+    desired:
+      value: NONE
+      metadata:
+        source: cloud
+        reason: initial-configuration
+  - name: leakRate
+    reportToCloud: true
+    collectCycle: 20000
+    reportCycle: 20000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: leakRate
+        dataType: float
+    desired:
+      value: '1.0'
+      metadata:
+        source: cloud
+        reason: initial-configuration
+  - name: samplingInterval
+    reportToCloud: true
+    collectCycle: 20000
+    reportCycle: 20000
+    visitors:
+      protocolName: virtual-ethernet
+      configData:
+        source: simulator
+        signal: samplingInterval
+        dataType: int
+    desired:
+      value: '10'
+      metadata:
+        source: cloud
+        reason: initial-configuration
+  methods:
+  - name: configureTireMonitoring
+    description: Change low-pressure threshold and simulation controls
+    propertyNames:
+    - pressureThreshold
+    - ambientTemperature
+    - leakEnabled
+    - leakWheel
+    - leakRate
+    - samplingInterval
+  - name: updateFirmware
+    description: Activate a locally staged tire-pressure ECU firmware
+    propertyNames:
+    - firmwareVersion
