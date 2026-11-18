@@ -1,0 +1,14 @@
+release=v1.0.0
+format=continuumx-playground-runtime-v1
+created_utc=2026-11-17T20:03:24Z
+source_git_commit=236562b95aaaae3973c4e785e55fad1b4abe3c07
+source_worktree=clean
+sdk_api_git_commit=54629ab601b7cddbb5f8e5410f004a54421c1a6f
+sdk_mapper_framework_git_commit=fba56c966ade9565542d0f8a31c8365738a5b652
+go_toolchain=go version go1.26.0 linux/amd64
+binary_target=linux/amd64
+mapper_protocol=virtual-ethernet
+firmware_versions=sim-1.0.0,sim-1.1.0
+candidate_type=local-demo-binaries
+source_disclosure=no-source-or-sdk-in-runtime-archive
+provenance_note=source-and-SDK-commits-recorded-at-packaging-time

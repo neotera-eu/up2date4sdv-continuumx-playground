@@ -1,0 +1,23 @@
+[Unit]
+Description=ContinuumX Virtual Tire Pressure ECU Firmware Simulator
+After=local-fs.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+RuntimeDirectory=continuumx-virtual-tire-ecu
+RuntimeDirectoryMode=0755
+StateDirectory=continuumx-virtual-tire-ecu
+StateDirectoryMode=0700
+ExecStart=/opt/continuumx/virtual-tire-pressure-ecu/virtual-tire-pressure-ecu --socket /run/continuumx-virtual-tire-ecu/ecu.sock --state-file /var/lib/continuumx-virtual-tire-ecu/state.json
+Restart=always
+RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=continuumx-virtual-tire-ecu
+
+[Install]
+WantedBy=multi-user.target
