@@ -209,6 +209,8 @@ diff -u /tmp/cx-pids-after-tire.txt /tmp/cx-pids-after-thermal.txt || true
 
 **Pass:** the thermal ECU PID changes and its running version / thermal DeviceStatus `reported` match the requested version; the mapper and tire ECU PIDs remain unchanged, and tire DeviceStatus continues reporting. If the thermal firmware was already `sim-1.1.0`, change only the command's requested value to `sim-1.0.0`.
 
+**D6. If the firmware upgrade/downgrade stalls:** This intermittent behavior has been observed. Do not mark the stalled operation successful even if the `observedDesired` advanced. Capture mapper/ECU logs and both Devices' desired, observed-desired, and reported firmware **before** recovery. When no activation helper is running and both ECU health endpoints are available, restart **only** `continuumx-virtual-ethernet-mapper.service` and recheck both DeviceStatus resources. The exact diagnostic and restart commands are in [Firmware-update troubleshooting](virtual-ecu-firmware-update-troubleshooting.md#5-first-firmware-update-succeeds-but-later-update-requests-stop-working). A restart is a documented workaround, **not** evidence that uninterrupted consecutive updates work; flag the limitation in the test report and reset the mapper PID baseline for subsequent isolation checks.
+
 ## E. Optional failure isolation (edge VM)
 
 Only run this test on an isolated Playground VM after the other tests pass. Record the current PIDs and DeviceStatus first. Temporarily stop the tire ECU:
@@ -243,6 +245,7 @@ Record the following evidence for this release version:
 | F - Tire update | Tire firmware changes; only tire service PID changes | ☐ |
 | G - Thermal update | Thermal firmware changes; only thermal service PID changes | ☐ |
 | H - Optional failure isolation | Stopping tire ECU leaves thermal reporter operational; restarting tire recovers | ☐ optional |
+| I - Repeated updates | Consecutive updates/downgrades work without mapper restart, or a workaround is explicitly documented | ☐ |
 
 Useful evidence commands (do not publish credentials or confidential logs):
 

@@ -141,7 +141,53 @@ sudo ls -l /usr/local/libexec/continuumx/activate-virtual-thermal-ecu \
 
 Use `systemctl show -p MainPID --value SERVICE` before and after each update to prove that the **selected ECU PID changes and the other two processes remain stable**. The helper selects only locally staged versions `sim-1.0.0` or `sim-1.1.0` and attempts rollback on failure; this is **not a signed or safety-certified firmware-update procedure**.
 
-## 5. Legacy installations
+## 5. First firmware update succeeds, but later update requests stop working
+
+**Observed intermittent behavior (VM Playground):** A tire-pressure firmware update succeeded, but subsequent tire-pressure downgrades and thermal firmware upgrades did not take effect. Restarting **only the shared mapper** restored updates for both ECUs, and repeated upgrades/downgrades then worked. This may indicate a mapper device-twin reconciliation or device-worker lifecycle defect. **The root cause has not been established, and a restart is a recovery workaround, not a fix.** It is different from the initial-registration issue in Section 3, although both may recover after the same service restart.
+
+Before restarting anything, ensure that no ECU activation is still running and collect diagnostics **while the failure is present**:
+
+On **`u2deb-edge`**:
+
+```bash
+systemctl is-active continuumx-virtual-ethernet-mapper.service \
+  continuumx-virtual-thermal-ecu.service continuumx-virtual-tire-ecu.service
+sudo journalctl -u continuumx-virtual-ethernet-mapper.service \
+  --since '20 minutes ago' --no-pager -l | \
+  grep -Ei 'DMI twin|FW-UPDATE|applying desired|activation|Starting batched|BATCH reported|error|stopped' || true
+sudo journalctl -u continuumx-virtual-thermal-ecu.service \
+  -u continuumx-virtual-tire-ecu.service --since '20 minutes ago' --no-pager -l
+pgrep -af 'activate-virtual-(thermal|tire)-ecu' || true
+```
+
+On **`u2deb-cloud`**, compare the requested and actual firmware for **both** Devices:
+
+```bash
+for dev in automotive-thermal-ecu-fw-001 automotive-tire-pressure-ecu-fw-001; do
+  echo "=== $dev ==="
+  kubectl get device "$dev" -n default -o json | jq -r '
+    .spec.properties[] | select(.name == "firmwareVersion") |
+    "desired=\(.desired.value)"'
+  kubectl get devicestatus "$dev" -n default -o json | jq -r '
+    .status.twins[]? | select(.propertyName == "firmwareVersion") |
+    "observedDesired=\(.observedDesired.value // "-") reported=\(.reported.value // "-")"'
+done
+```
+
+If both ECU health endpoints respond, no activation is still executing, but newly requested versions are not being processed, **restart the mapper alone** on `u2deb-edge`:
+
+```bash
+sudo systemctl restart continuumx-virtual-ethernet-mapper.service
+sudo journalctl -u continuumx-virtual-ethernet-mapper.service \
+  --since '2 minutes ago' --no-pager -l | \
+  grep -E 'Registration returned|Starting batched|BATCH reported|FW-UPDATE|[Ee]rror' || true
+```
+
+Do **not** restart EdgeCore, either ECU service, or manually invoke an activation helper as the first response. Verify that **both** DeviceStatus resources resume reporting, then compare `/v1/health` and `reported` firmware with the requested values. A matching `observedDesired` value alone is insufficient. If the request remains unapplied, investigate the DMI event path; a mapper restart does not guarantee that the same desired-value event will be replayed. Re-establish a **new mapper PID baseline** before any further firmware process-isolation test.
+
+Record the failed desired value, timestamps, relevant mapper/EdgeCore logs, and whether either ECU continued reporting. Reproducibility should be investigated and fixed in the private mapper development project; this Playground only documents the observed behavior and operational recovery.
+
+## 6. Legacy installations
 
 If present, retire `continuumx-virtual-ecu.service` and `continuumx-virtual-ethernet.service` before bringing up the new services. Back up existing settings and leave legacy state untouched unless migrating it deliberately. Do not run two mappers registering the same `virtual-ethernet` protocol or two reference Devices driving the same simulated ECU.
 

@@ -818,6 +818,7 @@ For either `DEVICE`, find its `INDEX` again and repeat the corresponding command
 - Candidate selection is type-specific: `virtual-thermal-ecu-*` and `virtual-tire-pressure-ecu-*` are staged separately under `/opt/continuumx/firmware-candidates/`.
 - The VM exercise does not download firmware over the cloud-edge tunnel, verify cryptographic signatures, flash devices, or guarantee automotive OTA safety. The local activation scripts provide best-effort rollback after failure; treat this as a demonstrator only.
 - For debugging, consult [firmware-update troubleshooting](doc/virtual-ecu-firmware-update-troubleshooting.md), which covers both ECUs and DMI startup ordering.
+- If firmware updates to either ECU stop being processed, capture both twin states and mapper logs before attempting recovery. The [troubleshooting guide](doc/virtual-ecu-firmware-update-troubleshooting.md#5-first-firmware-update-succeeds-but-later-update-requests-stop-working) documents a **mapper-only restart** as a workaround for this observed intermittent behavior; its root cause is not yet confirmed.
 
 ## Run the NGINX edge workload
 
