@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Mapper entrypoint for the thermal ECU. Catalog download, then local activator.
+exec /usr/local/libexec/continuumx/activate-from-catalog.sh \
+  virtual-thermal-ecu \
+  /usr/local/libexec/continuumx/activate-virtual-thermal-ecu.local \
+  "$@"

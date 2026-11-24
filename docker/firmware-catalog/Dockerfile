@@ -18,13 +18,19 @@ COPY bin/ecu/linux-amd64/virtual-thermal-ecu-sim-1.0.0 \
      /opt/firmware-seed/virtual-thermal-ecu-sim-1.0.0
 COPY bin/ecu/linux-amd64/virtual-thermal-ecu-sim-1.1.0 \
      /opt/firmware-seed/virtual-thermal-ecu-sim-1.1.0
+COPY bin/ecu/linux-amd64/virtual-tire-pressure-ecu-sim-1.0.0 \
+     /opt/firmware-seed/virtual-tire-pressure-ecu-sim-1.0.0
+COPY bin/ecu/linux-amd64/virtual-tire-pressure-ecu-sim-1.1.0 \
+     /opt/firmware-seed/virtual-tire-pressure-ecu-sim-1.1.0
 COPY --from=build /app/public ./public
 COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
 COPY docker/firmware-catalog/seed-and-start.sh /usr/local/bin/seed-and-start.sh
 RUN chmod 755 /usr/local/bin/seed-and-start.sh \
               /opt/firmware-seed/virtual-thermal-ecu-sim-1.0.0 \
-              /opt/firmware-seed/virtual-thermal-ecu-sim-1.1.0
+              /opt/firmware-seed/virtual-thermal-ecu-sim-1.1.0 \
+              /opt/firmware-seed/virtual-tire-pressure-ecu-sim-1.0.0 \
+              /opt/firmware-seed/virtual-tire-pressure-ecu-sim-1.1.0
 EXPOSE 3100
 VOLUME ["/data/firmwares"]
 CMD ["/usr/local/bin/seed-and-start.sh"]

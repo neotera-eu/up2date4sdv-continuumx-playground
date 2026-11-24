@@ -1,0 +1,27 @@
+[Unit]
+Description=ContinuumX Virtual Thermal ECU Firmware Simulator
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+RuntimeDirectory=continuumx-virtual-thermal-ecu
+RuntimeDirectoryMode=0755
+StateDirectory=continuumx-virtual-thermal-ecu
+StateDirectoryMode=0700
+EnvironmentFile=-/etc/continuumx/firmware-catalog.env
+ExecStartPre=/bin/bash -c 'test -x /opt/continuumx/virtual-thermal-ecu/virtual-thermal-ecu || /usr/local/libexec/continuumx/fetch-ecu-from-catalog.sh virtual-thermal-ecu sim-1.0.0 --install-active'
+ExecStart=/opt/continuumx/virtual-thermal-ecu/virtual-thermal-ecu --socket /run/continuumx-virtual-thermal-ecu/ecu.sock --state-file /var/lib/continuumx-virtual-thermal-ecu/state.json
+Restart=always
+RestartSec=3
+KillSignal=SIGTERM
+TimeoutStartSec=180
+TimeoutStopSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=continuumx-virtual-thermal-ecu
+
+[Install]
+WantedBy=multi-user.target

@@ -56,6 +56,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends skopeo \
          registry.k8s.io/pause:3.10.2 \
          docker.io/neotera/installation-package:v1.23.0 \
          docker.io/library/eclipse-mosquitto:1.6.15 \
+         docker.io/library/nginx:alpine \
        ; do \
          i=$((i+1)); \
          dest=$(printf '/opt/cx/images/%02d.tar' "$i"); \
@@ -93,31 +94,38 @@ RUN useradd -m -s /bin/bash -G sudo user \
     && printf 'user ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/user \
     && chmod 440 /etc/sudoers.d/user
 
-# Virtual Thermal ECU — no firmware binaries baked in.
-# Boot (sim-1.0.0) and OTA (sim-1.1.0) both download from firmware-catalog
-# (which seeds bin/ecu/linux-amd64/). Candidates dir is only a download cache.
+# Both Virtual ECUs. No firmware binaries are baked in.
+# Boot (sim-1.0.0) and OTA (sim-1.1.0) download from firmware-catalog.
 RUN install -d -m 0755 \
       /opt/continuumx/virtual-thermal-ecu \
+      /opt/continuumx/virtual-tire-pressure-ecu \
       /opt/continuumx/firmware-candidates \
       /usr/local/libexec/continuumx \
       /etc/continuumx
-COPY deploy/libexec/activate-virtual-ecu \
-     /usr/local/libexec/continuumx/activate-virtual-ecu.local
+COPY deploy/libexec/activate-virtual-thermal-ecu \
+     /usr/local/libexec/continuumx/activate-virtual-thermal-ecu.local
+COPY deploy/libexec/activate-virtual-tire-ecu \
+     /usr/local/libexec/continuumx/activate-virtual-tire-ecu.local
 COPY docker/edge/fetch-ecu-from-catalog.sh \
-     /usr/local/libexec/continuumx/fetch-ecu-from-catalog.sh
-COPY docker/edge/activate-virtual-ecu-with-catalog.sh \
-     /usr/local/libexec/continuumx/activate-virtual-ecu
-COPY docker/edge/continuumx-virtual-ecu.service \
-     /etc/systemd/system/continuumx-virtual-ecu.service
+     docker/edge/activate-from-catalog.sh \
+     docker/edge/activate-virtual-thermal-ecu \
+     docker/edge/activate-virtual-tire-ecu \
+     /usr/local/libexec/continuumx/
+COPY docker/edge/continuumx-virtual-thermal-ecu.service \
+     docker/edge/continuumx-virtual-tire-ecu.service \
+     /etc/systemd/system/
 RUN printf '%s\n' \
       'FIRMWARE_CATALOG_URL=http://firmware-catalog:3100' \
-      'FIRMWARE_CATALOG_NAME=virtual-thermal-ecu' \
       >/etc/continuumx/firmware-catalog.env \
     && chmod 0644 /etc/continuumx/firmware-catalog.env \
-                  /etc/systemd/system/continuumx-virtual-ecu.service \
-    && chmod 0755 /usr/local/libexec/continuumx/activate-virtual-ecu.local \
+                  /etc/systemd/system/continuumx-virtual-thermal-ecu.service \
+                  /etc/systemd/system/continuumx-virtual-tire-ecu.service \
+    && chmod 0755 /usr/local/libexec/continuumx/activate-virtual-thermal-ecu.local \
+                  /usr/local/libexec/continuumx/activate-virtual-tire-ecu.local \
                   /usr/local/libexec/continuumx/fetch-ecu-from-catalog.sh \
-                  /usr/local/libexec/continuumx/activate-virtual-ecu
+                  /usr/local/libexec/continuumx/activate-from-catalog.sh \
+                  /usr/local/libexec/continuumx/activate-virtual-thermal-ecu \
+                  /usr/local/libexec/continuumx/activate-virtual-tire-ecu
 
 # Virtual Ethernet mapper (DMI <-> Virtual ECU).
 RUN install -d -m 0755 \
@@ -141,8 +149,10 @@ RUN chmod 755 /usr/local/sbin/cx-bootstrap*.sh /usr/local/sbin/cx-import-images.
     && ln -sf /usr/lib/systemd/system/containerd.service /etc/systemd/system/multi-user.target.wants/containerd.service \
     && ln -sf /etc/systemd/system/cx-bootstrap.service /etc/systemd/system/multi-user.target.wants/cx-bootstrap.service \
     && ln -sf /usr/lib/systemd/system/ssh.service /etc/systemd/system/multi-user.target.wants/ssh.service \
-    && ln -sf /etc/systemd/system/continuumx-virtual-ecu.service \
-         /etc/systemd/system/multi-user.target.wants/continuumx-virtual-ecu.service \
+    && ln -sf /etc/systemd/system/continuumx-virtual-thermal-ecu.service \
+         /etc/systemd/system/multi-user.target.wants/continuumx-virtual-thermal-ecu.service \
+    && ln -sf /etc/systemd/system/continuumx-virtual-tire-ecu.service \
+         /etc/systemd/system/multi-user.target.wants/continuumx-virtual-tire-ecu.service \
     && ln -sf /etc/systemd/system/continuumx-virtual-ethernet-mapper.service \
          /etc/systemd/system/multi-user.target.wants/continuumx-virtual-ethernet-mapper.service \
     && mkdir -p /etc/systemd/system/sockets.target.wants \

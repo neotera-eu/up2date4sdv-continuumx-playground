@@ -11,55 +11,61 @@ cd "$(dirname "$0")"
 
 CLOUD=continuumx-playground_cloud_1
 EDGE=continuumx-playground_edge_1
-DEVICE=automotive-thermal-ecu-fw-001
+THERMAL=automotive-thermal-ecu-fw-001
+TIRE=automotive-tire-pressure-ecu-fw-001
 PASS=0
 FAIL=0
 
 log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 
 ecu_health_version() {
+  local sock="$1"
   podman exec "$EDGE" curl -sfS --max-time 2 \
-    --unix-socket /run/continuumx-virtual-ecu/ecu.sock \
+    --unix-socket "$sock" \
     http://localhost/v1/health 2>/dev/null \
     | python3 -c 'import sys,json; print(json.load(sys.stdin).get("firmwareVersion",""))' 2>/dev/null || true
 }
 
-device_desired_fw() {
-  podman exec "$CLOUD" kubectl get device "$DEVICE" -n default -o json 2>/dev/null \
+unit_pid() {
+  podman exec "$EDGE" systemctl show -p MainPID --value "$1" 2>/dev/null || true
+}
+
+device_desired() {
+  local dev="$1" prop="$2"
+  podman exec "$CLOUD" kubectl get device "$dev" -n default -o json 2>/dev/null \
     | python3 -c '
 import json,sys
+prop=sys.argv[1]
 d=json.load(sys.stdin)
 for p in d.get("spec",{}).get("properties",[]):
-  if p.get("name")=="firmwareVersion":
+  if p.get("name")==prop:
     print((p.get("desired") or {}).get("value",""))
     break
-' 2>/dev/null || true
+' "$prop" 2>/dev/null || true
 }
 
-twin_fw_field() {
-  # $1 = observedDesired | reported
-  local field="$1"
-  podman exec "$CLOUD" kubectl get devicestatus "$DEVICE" -n default -o json 2>/dev/null \
+twin_field() {
+  local dev="$1" prop="$2" field="$3"
+  podman exec "$CLOUD" kubectl get devicestatus "$dev" -n default -o json 2>/dev/null \
     | python3 -c '
 import json,sys
-field=sys.argv[1]
+prop,field=sys.argv[1:]
 d=json.load(sys.stdin)
 for t in d.get("status",{}).get("twins",[]) or []:
-  if t.get("propertyName")=="firmwareVersion":
+  if t.get("propertyName")==prop:
     print((t.get(field) or {}).get("value",""))
     break
-' "$field" 2>/dev/null || true
+' "$prop" "$field" 2>/dev/null || true
 }
 
-fw_property_index() {
-  podman exec "$CLOUD" kubectl get device "$DEVICE" -n default -o json 2>/dev/null \
-    | python3 -c '
-import json,sys
-d=json.load(sys.stdin)
-for i,p in enumerate(d.get("spec",{}).get("properties",[])):
-  if p.get("name")=="firmwareVersion":
-    print(i); break
-' 2>/dev/null || true
+patch_desired() {
+  local dev="$1" prop="$2" value="$3" idx
+  idx="$(podman exec "$CLOUD" kubectl get device "$dev" -n default -o json \
+    | python3 -c 'import json,sys; prop=sys.argv[1]; d=json.load(sys.stdin); print(next(i for i,p in enumerate(d["spec"]["properties"]) if p.get("name")==prop))' "$prop")"
+  [[ -n "$idx" ]] || { echo "missing property ${prop} on ${dev}" >&2; return 1; }
+  podman exec "$CLOUD" kubectl patch device "$dev" -n default --type=json \
+    -p="[{\"op\":\"test\",\"path\":\"/spec/properties/${idx}/name\",\"value\":\"${prop}\"},{\"op\":\"replace\",\"path\":\"/spec/properties/${idx}/desired/value\",\"value\":\"${value}\"}]" \
+    >/dev/null
 }
 
 wait_ready() {
@@ -74,12 +80,13 @@ wait_ready() {
     e_boot=$(podman exec "$EDGE" systemctl is-active cx-bootstrap 2>/dev/null || true)
     e_core=$(podman exec "$EDGE" systemctl is-active edgecore 2>/dev/null || true)
     mapper=$(podman exec "$EDGE" systemctl is-active continuumx-virtual-ethernet-mapper 2>/dev/null || true)
-    ecu=$(podman exec "$EDGE" systemctl is-active continuumx-virtual-ecu 2>/dev/null || true)
+    ecu=$(podman exec "$EDGE" systemctl is-active continuumx-virtual-thermal-ecu 2>/dev/null || true)
+    tire=$(podman exec "$EDGE" systemctl is-active continuumx-virtual-tire-ecu 2>/dev/null || true)
     c_boot=${c_boot:-na}; e_boot=${e_boot:-na}; e_core=${e_core:-na}
     mapper=${mapper:-na}; ecu=${ecu:-na}
     podman exec "$CLOUD" bash -c 'ss -lnt 2>/dev/null | grep -q ":9443 "' 2>/dev/null && r9443=yes || true
 
-    log "t+${elapsed}s cloud-boot=$c_boot ready=$c_ready :9443=$r9443 edge-boot=$e_boot edgecore=$e_core ecu=$ecu mapper=$mapper"
+    log "t+${elapsed}s cloud-boot=$c_boot ready=$c_ready :9443=$r9443 edge-boot=$e_boot edgecore=$e_core thermal=$ecu tire=${tire:-na} mapper=$mapper"
 
     if [[ "$c_boot" == failed || "$e_boot" == failed ]]; then
       log "bootstrap FAILED"
@@ -89,7 +96,7 @@ wait_ready() {
     fi
 
     if [[ "$c_ready" == yes && "$r9443" == yes && "$e_core" == active && \
-          "$ecu" == active && "$mapper" == active && \
+          "$ecu" == active && "${tire:-}" == active && "$mapper" == active && \
           ("$c_boot" == active || "$c_boot" == inactive) && \
           ("$e_boot" == active || "$e_boot" == inactive) ]]; then
       log "stack ready in ${elapsed}s"
@@ -114,6 +121,7 @@ assert_catalog_seeded() {
   for a in $(seq 1 30); do
     catalog_json="$(curl -fsS --max-time 5 http://127.0.0.1:3100/api/firmwares 2>/dev/null || true)"
     if echo "$catalog_json" | grep -q 'virtual-thermal-ecu' \
+       && echo "$catalog_json" | grep -q 'virtual-tire-pressure-ecu' \
        && echo "$catalog_json" | grep -q 'sim-1.0.0' \
        && echo "$catalog_json" | grep -q 'sim-1.1.0'; then
       catalog_ok=1
@@ -122,97 +130,71 @@ assert_catalog_seeded() {
     sleep 2
   done
   [[ "$catalog_ok" == 1 ]] || {
-    log "FAIL: firmware-catalog missing virtual-thermal-ecu sim-1.0.0 and sim-1.1.0"
+    log "FAIL: firmware-catalog missing thermal and tire sim-1.0.0 / sim-1.1.0"
     echo "$catalog_json" | head -c 800 || true
     return 1
   }
-  # Edge must reach the catalog on the compose network (CloudCore OTA download path).
   podman exec "$EDGE" curl -fsS --max-time 5 \
-    "http://firmware-catalog:3100/api/download?name=virtual-thermal-ecu&version=sim-1.1.0" \
+    "http://firmware-catalog:3100/api/download?name=virtual-tire-pressure-ecu&version=sim-1.1.0" \
     -o /dev/null \
-    || { log "FAIL: edge cannot download sim-1.1.0 from firmware-catalog"; return 1; }
-  log "catalog seeded + edge can download via http://firmware-catalog:3100"
+    || { log "FAIL: edge cannot download tire sim-1.1.0 from firmware-catalog"; return 1; }
+  log "catalog seeded with both ECUs; edge can download"
 }
 
-# Full CloudCore → Device twin → mapper → catalog → ECU → DeviceStatus path.
+# CloudCore patch → catalog download → one ECU only.
+# $1 device  $2 catalog name  $3 health socket  $4 target version
 cloud_initiated_firmware_ota() {
-  local target="$1"
-  local fw_idx desired observed reported ecu_ver ok stamp_before stamp_after
-
-  fw_idx="$(fw_property_index)"
-  [[ -n "$fw_idx" ]] || { log "FAIL: cannot resolve firmwareVersion property index"; return 1; }
-
-  desired="$(device_desired_fw)"
-  observed="$(twin_fw_field observedDesired)"
-  reported="$(twin_fw_field reported)"
-  ecu_ver="$(ecu_health_version)"
-  log "pre-OTA state desired=${desired} observedDesired=${observed} reported=${reported} ecu=${ecu_ver}"
+  local dev="$1" name="$2" sock="$3" target="$4"
+  local desired observed reported ecu_ver ok stamp_before stamp_after
 
   stamp_before="$(podman exec "$EDGE" sh -c 'wc -l < /var/log/continuumx-catalog-fetch.log 2>/dev/null || echo 0')"
   stamp_before="${stamp_before//[^0-9]/}"
   stamp_before="${stamp_before:-0}"
 
-  log "CloudCore patch: Device/${DEVICE} firmwareVersion.desired → ${target} (index ${fw_idx})"
-  podman exec "$CLOUD" kubectl patch device "$DEVICE" -n default --type=json \
-    -p="[{\"op\":\"test\",\"path\":\"/spec/properties/${fw_idx}/name\",\"value\":\"firmwareVersion\"},{\"op\":\"replace\",\"path\":\"/spec/properties/${fw_idx}/desired/value\",\"value\":\"${target}\"}]" \
-    >/dev/null
+  log "CloudCore patch: ${dev} firmwareVersion.desired → ${target}"
+  patch_desired "$dev" firmwareVersion "$target"
 
-  # Spec must reflect the cloud write immediately.
-  desired="$(device_desired_fw)"
+  desired="$(device_desired "$dev" firmwareVersion)"
   [[ "$desired" == "$target" ]] || {
-    log "FAIL: Device.spec desired is '${desired}', expected '${target}' after cloud patch"
+    log "FAIL: ${dev} desired is '${desired}', expected '${target}'"
     return 1
   }
-  log "Device.spec.desired=${desired} (cloud write accepted)"
 
   ok=0
   for a in $(seq 1 90); do
-    desired="$(device_desired_fw)"
-    observed="$(twin_fw_field observedDesired)"
-    reported="$(twin_fw_field reported)"
-    ecu_ver="$(ecu_health_version)"
-    log "fw[${target}] attempt$a desired=${desired} observedDesired=${observed} reported=${reported} ecu=${ecu_ver}"
-    if [[ "$desired" == "$target" \
-       && "$observed" == "$target" \
-       && "$reported" == "$target" \
-       && "$ecu_ver" == "$target" ]]; then
+    desired="$(device_desired "$dev" firmwareVersion)"
+    observed="$(twin_field "$dev" firmwareVersion observedDesired)"
+    reported="$(twin_field "$dev" firmwareVersion reported)"
+    ecu_ver="$(ecu_health_version "$sock")"
+    log "fw[${dev} ${target}] attempt$a desired=${desired} observedDesired=${observed} reported=${reported} ecu=${ecu_ver}"
+    if [[ "$desired" == "$target" && "$observed" == "$target" \
+       && "$reported" == "$target" && "$ecu_ver" == "$target" ]]; then
       ok=1
       break
     fi
     sleep 2
   done
-
   [[ "$ok" == 1 ]] || {
-    log "FAIL: CloudCore-initiated OTA to ${target} did not converge"
-    podman exec "$CLOUD" kubectl get device "$DEVICE" -n default -o yaml | tail -80 || true
-    podman exec "$CLOUD" kubectl get devicestatus "$DEVICE" -n default -o yaml | tail -100 || true
-    podman exec "$EDGE" journalctl -u continuumx-virtual-ecu -n 50 --no-pager || true
+    log "FAIL: CloudCore OTA ${dev} → ${target} did not converge"
     podman exec "$EDGE" journalctl -u continuumx-virtual-ethernet-mapper -n 80 --no-pager || true
     podman exec "$EDGE" cat /var/log/continuumx-catalog-fetch.log 2>/dev/null || true
     return 1
   }
 
-  # Catalog fetch must have recorded this version after the cloud patch.
   stamp_after="$(podman exec "$EDGE" sh -c 'wc -l < /var/log/continuumx-catalog-fetch.log 2>/dev/null || echo 0')"
   stamp_after="${stamp_after//[^0-9]/}"
   stamp_after="${stamp_after:-0}"
-  if ! podman exec "$EDGE" grep -q "fetched virtual-thermal-ecu@${target}" \
-      /var/log/continuumx-catalog-fetch.log; then
-    log "FAIL: missing catalog fetch stamp for ${target}"
-    podman exec "$EDGE" cat /var/log/continuumx-catalog-fetch.log 2>/dev/null || true
+  if ! podman exec "$EDGE" grep -q "fetched ${name}@${target}" /var/log/continuumx-catalog-fetch.log; then
+    log "FAIL: missing catalog fetch stamp for ${name}@${target}"
     return 1
   fi
-  if [[ "$stamp_after" -le "$stamp_before" ]]; then
-    log "FAIL: catalog fetch log did not grow after cloud patch to ${target} (before=${stamp_before} after=${stamp_after})"
+  [[ "$stamp_after" -gt "$stamp_before" ]] || {
+    log "FAIL: catalog fetch log did not grow for ${name}@${target}"
     return 1
-  fi
-  if ! podman exec "$EDGE" test -x \
-      "/opt/continuumx/firmware-candidates/virtual-thermal-ecu-${target}"; then
-    log "FAIL: catalog download did not stage candidate for ${target}"
-    return 1
-  fi
-
-  log "PASS CloudCore OTA → ${target} (desired=observedDesired=reported=ecu, catalog fetch ok)"
+  }
+  podman exec "$EDGE" test -x "/opt/continuumx/firmware-candidates/${name}-${target}" \
+    || { log "FAIL: candidate not staged for ${name}@${target}"; return 1; }
+  log "PASS CloudCore OTA ${dev} → ${target}"
 }
 
 verify_e2e() {
@@ -253,98 +235,153 @@ verify_e2e() {
   podman exec "$EDGE" bash -c 'timeout 3 bash -c "echo >/dev/tcp/mqtt-broker/1883"' 2>/dev/null \
     || podman exec "$EDGE" bash -c 'getent hosts mqtt-broker >/dev/null'
 
-  # Virtual ECU + mapper
-  podman exec "$EDGE" systemctl is-active --quiet continuumx-virtual-ecu \
-    || { log "FAIL: virtual-ecu inactive"; return 1; }
+  podman exec "$EDGE" systemctl is-active --quiet continuumx-virtual-thermal-ecu \
+    || { log "FAIL: thermal ECU inactive"; return 1; }
+  podman exec "$EDGE" systemctl is-active --quiet continuumx-virtual-tire-ecu \
+    || { log "FAIL: tire ECU inactive"; return 1; }
   podman exec "$EDGE" systemctl is-active --quiet continuumx-virtual-ethernet-mapper \
     || { log "FAIL: mapper inactive"; return 1; }
-  podman exec "$EDGE" bash -c 'test -S /etc/kubeedge/dmi.sock' \
+  podman exec "$EDGE" test -S /etc/kubeedge/dmi.sock \
     || { log "FAIL: missing dmi.sock"; return 1; }
-  podman exec "$EDGE" bash -c 'test -S /run/continuumx-virtual-ecu/ecu.sock' \
-    || { log "FAIL: missing ecu.sock"; return 1; }
+  podman exec "$EDGE" test -S /run/continuumx-virtual-thermal-ecu/ecu.sock \
+    || { log "FAIL: missing thermal socket"; return 1; }
+  podman exec "$EDGE" test -S /run/continuumx-virtual-tire-ecu/ecu.sock \
+    || { log "FAIL: missing tire socket"; return 1; }
 
-  local ver
-  ver="$(ecu_health_version)"
-  log "ecu health firmwareVersion=${ver}"
-  [[ "$ver" == "sim-1.0.0" ]] \
-    || { log "FAIL: expected boot baseline sim-1.0.0, got '${ver}'"; return 1; }
-  if ! podman exec "$EDGE" grep -q 'fetched virtual-thermal-ecu@sim-1.0.0' \
-      /var/log/continuumx-catalog-fetch.log; then
-    log "FAIL: missing catalog fetch stamp for boot baseline sim-1.0.0"
-    podman exec "$EDGE" cat /var/log/continuumx-catalog-fetch.log 2>/dev/null || true
-    return 1
-  fi
-  log "boot sim-1.0.0 confirmed via catalog download"
+  local thermal_ver tire_ver
+  thermal_ver="$(ecu_health_version /run/continuumx-virtual-thermal-ecu/ecu.sock)"
+  tire_ver="$(ecu_health_version /run/continuumx-virtual-tire-ecu/ecu.sock)"
+  log "health thermal=${thermal_ver} tire=${tire_ver}"
+  [[ "$thermal_ver" == "sim-1.0.0" && "$tire_ver" == "sim-1.0.0" ]] \
+    || { log "FAIL: expected both ECUs at sim-1.0.0"; return 1; }
+  podman exec "$EDGE" grep -q 'fetched virtual-thermal-ecu@sim-1.0.0' /var/log/continuumx-catalog-fetch.log \
+    && podman exec "$EDGE" grep -q 'fetched virtual-tire-pressure-ecu@sim-1.0.0' /var/log/continuumx-catalog-fetch.log \
+    || { log "FAIL: boot firmware was not fetched from the catalog"; return 1; }
+  log "PASS boot: both ECUs sim-1.0.0 from catalog"
 
   local device_ok=0
   for a in $(seq 1 45); do
-    if podman exec "$CLOUD" kubectl get device "$DEVICE" -n default >/dev/null 2>&1 \
-       && podman exec "$CLOUD" kubectl get devicestatus "$DEVICE" -n default \
-            -o jsonpath='{.status.twins[*].propertyName}' 2>/dev/null | grep -q firmwareVersion; then
+    if podman exec "$CLOUD" kubectl get devicestatus "$THERMAL" -n default \
+         -o jsonpath='{.status.twins[*].propertyName}' 2>/dev/null | grep -q coolantTemperature \
+       && podman exec "$CLOUD" kubectl get devicestatus "$TIRE" -n default \
+         -o jsonpath='{.status.twins[*].propertyName}' 2>/dev/null | grep -q frontLeftPressure; then
       device_ok=1
       break
     fi
     sleep 2
   done
   [[ "$device_ok" == 1 ]] || {
-    log "FAIL: device twin / DeviceStatus not ready"
+    log "FAIL: both DeviceStatus resources not ready"
     podman exec "$CLOUD" kubectl get devicemodel,device,devicestatus -n default || true
-    podman exec "$EDGE" journalctl -u continuumx-virtual-ethernet-mapper -n 40 --no-pager || true
     return 1
   }
 
-  # Initial firmware twin must already show sim-1.0.0 from the cloud side.
-  local init_ok=0 desired observed reported
+  local init_ok=0
   for a in $(seq 1 45); do
-    desired="$(device_desired_fw)"
-    observed="$(twin_fw_field observedDesired)"
-    reported="$(twin_fw_field reported)"
-    log "fw baseline attempt$a desired=${desired} observedDesired=${observed} reported=${reported}"
-    if [[ "$desired" == "sim-1.0.0" && "$reported" == "sim-1.0.0" ]]; then
+    if [[ "$(twin_field "$THERMAL" firmwareVersion reported)" == "sim-1.0.0" \
+       && "$(twin_field "$TIRE" firmwareVersion reported)" == "sim-1.0.0" ]]; then
       init_ok=1
       break
     fi
     sleep 2
   done
-  [[ "$init_ok" == 1 ]] || {
-    log "FAIL: cloud twin not reporting boot firmware sim-1.0.0"
-    podman exec "$CLOUD" kubectl get device,devicestatus "$DEVICE" -n default -o yaml | tail -120 || true
-    return 1
-  }
-  log "cloud twin baseline: desired/reported=sim-1.0.0"
+  [[ "$init_ok" == 1 ]] || { log "FAIL: cloud twins not reporting sim-1.0.0"; return 1; }
+  log "PASS twins: both devices report sim-1.0.0"
 
-  # Coolant twin patch (index 14) — proves DeviceTwin path before firmware OTA.
-  podman exec "$CLOUD" kubectl patch device "$DEVICE" -n default --type=json \
-    -p='[{"op":"test","path":"/spec/properties/14/name","value":"targetCoolantTemperature"},{"op":"replace","path":"/spec/properties/14/desired/value","value":"63.0"}]' \
-    >/dev/null
-
-  local twin_ok=0
+  log "PART coolant setpoint"
+  patch_desired "$THERMAL" targetCoolantTemperature 63.0
+  local twin_ok=0 observed reported
   for a in $(seq 1 45); do
-    observed=$(podman exec "$CLOUD" kubectl get devicestatus "$DEVICE" -n default \
-      -o jsonpath='{range .status.twins[?(@.propertyName=="targetCoolantTemperature")]}{.observedDesired.value}{end}' 2>/dev/null || true)
-    reported=$(podman exec "$CLOUD" kubectl get devicestatus "$DEVICE" -n default \
-      -o jsonpath='{range .status.twins[?(@.propertyName=="targetCoolantTemperature")]}{.reported.value}{end}' 2>/dev/null || true)
-    log "coolant twin attempt$a observedDesired=$observed reported=$reported"
+    observed="$(twin_field "$THERMAL" targetCoolantTemperature observedDesired)"
+    reported="$(twin_field "$THERMAL" targetCoolantTemperature reported)"
+    log "coolant attempt$a observedDesired=$observed reported=$reported"
     if echo "$observed" | grep -Eq '^63(\.0)?$' && echo "$reported" | grep -Eq '^63(\.0)?$'; then
       twin_ok=1
       break
     fi
     sleep 3
   done
-  [[ "$twin_ok" == 1 ]] || {
-    log "FAIL: desired coolant twin 63.0 not observed/reported"
-    podman exec "$CLOUD" kubectl get devicestatus "$DEVICE" -n default -o yaml | tail -80 || true
-    return 1
-  }
+  [[ "$twin_ok" == 1 ]] || { log "FAIL: coolant setpoint"; return 1; }
+  log "PASS coolant setpoint 63.0"
+
+  log "PART tire leak"
+  local fl start_fl
+  fl="$(twin_field "$TIRE" frontLeftPressure reported)"
+  start_fl="$fl"
+  [[ -n "$fl" ]] || { log "FAIL: no frontLeftPressure yet"; return 1; }
+  patch_desired "$TIRE" leakWheel FL
+  patch_desired "$TIRE" leakRate 10
+  patch_desired "$TIRE" pressureThreshold "$fl"
+  patch_desired "$TIRE" leakEnabled true
+  local leak_ok=0 warn wheels
+  for a in $(seq 1 40); do
+    fl="$(twin_field "$TIRE" frontLeftPressure reported)"
+    warn="$(twin_field "$TIRE" lowPressureWarning reported)"
+    wheels="$(twin_field "$TIRE" lowPressureWheels reported)"
+    log "leak attempt$a fl=${fl} warn=${warn} wheels=${wheels}"
+    if [[ "$warn" == "true" || "$warn" == "True" ]] && echo "$wheels" | grep -q FL; then
+      leak_ok=1
+      break
+    fi
+    sleep 3
+  done
+  patch_desired "$TIRE" leakEnabled false || true
+  [[ "$leak_ok" == 1 ]] || { log "FAIL: tire leak warning did not appear (start fl=${start_fl})"; return 1; }
+  [[ "$(twin_field "$THERMAL" targetCoolantTemperature reported)" == "63" \
+    || "$(twin_field "$THERMAL" targetCoolantTemperature reported)" == "63.0" ]] \
+    || { log "FAIL: thermal twin changed during tire leak"; return 1; }
+  log "PASS tire leak warning; thermal twin unchanged"
 
   assert_catalog_seeded || return 1
 
-  # --- Full firmware update cycle initiated from the cloud ---
-  cloud_initiated_firmware_ota sim-1.1.0 || return 1
-  cloud_initiated_firmware_ota sim-1.0.0 || return 1
-  cloud_initiated_firmware_ota sim-1.1.0 || return 1
+  log "PART independent firmware updates"
+  local pid_mapper pid_thermal pid_tire
+  pid_mapper="$(unit_pid continuumx-virtual-ethernet-mapper.service)"
+  pid_thermal="$(unit_pid continuumx-virtual-thermal-ecu.service)"
+  pid_tire="$(unit_pid continuumx-virtual-tire-ecu.service)"
+  log "pids before mapper=${pid_mapper} thermal=${pid_thermal} tire=${pid_tire}"
 
-  log "PASS: $label (CloudCore firmware OTA cycle complete)"
+  cloud_initiated_firmware_ota "$TIRE" virtual-tire-pressure-ecu \
+    /run/continuumx-virtual-tire-ecu/ecu.sock sim-1.1.0 || return 1
+  [[ "$(unit_pid continuumx-virtual-ethernet-mapper.service)" == "$pid_mapper" ]] \
+    || { log "FAIL: mapper restarted during tire OTA"; return 1; }
+  [[ "$(unit_pid continuumx-virtual-thermal-ecu.service)" == "$pid_thermal" ]] \
+    || { log "FAIL: thermal ECU restarted during tire OTA"; return 1; }
+  [[ "$(unit_pid continuumx-virtual-tire-ecu.service)" != "$pid_tire" ]] \
+    || { log "FAIL: tire ECU pid did not change"; return 1; }
+  [[ "$(ecu_health_version /run/continuumx-virtual-thermal-ecu/ecu.sock)" == "sim-1.0.0" ]] \
+    || { log "FAIL: thermal firmware changed during tire OTA"; return 1; }
+  log "PASS tire OTA isolated"
+
+  pid_tire="$(unit_pid continuumx-virtual-tire-ecu.service)"
+  cloud_initiated_firmware_ota "$THERMAL" virtual-thermal-ecu \
+    /run/continuumx-virtual-thermal-ecu/ecu.sock sim-1.1.0 || return 1
+  [[ "$(unit_pid continuumx-virtual-ethernet-mapper.service)" == "$pid_mapper" ]] \
+    || { log "FAIL: mapper restarted during thermal OTA"; return 1; }
+  [[ "$(unit_pid continuumx-virtual-tire-ecu.service)" == "$pid_tire" ]] \
+    || { log "FAIL: tire ECU restarted during thermal OTA"; return 1; }
+  [[ "$(unit_pid continuumx-virtual-thermal-ecu.service)" != "$pid_thermal" ]] \
+    || { log "FAIL: thermal ECU pid did not change"; return 1; }
+  log "PASS thermal OTA isolated"
+
+  log "PART nginx edge workload"
+  local nginx_ok=0
+  for a in $(seq 1 30); do
+    if curl -fsS --max-time 3 http://127.0.0.1:8080/ 2>/dev/null | grep -qi nginx; then
+      nginx_ok=1
+      break
+    fi
+    sleep 2
+  done
+  [[ "$nginx_ok" == 1 ]] || {
+    log "FAIL: nginx on :8080 did not respond"
+    podman exec "$CLOUD" kubectl get pods -o wide || true
+    podman exec "$CLOUD" kubectl describe pod -l app=nginx-edge || true
+    return 1
+  }
+  log "PASS nginx edge workload"
+
+  log "PASS: $label"
   return 0
 }
 

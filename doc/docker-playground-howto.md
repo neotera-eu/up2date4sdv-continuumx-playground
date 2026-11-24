@@ -14,16 +14,16 @@ The stack starts four services:
 |---|---|
 | **mqtt-broker** | External MQTT broker for EdgeCore EventBus (`mqttMode: 2`) |
 | **cloud** | Kubernetes control plane + ContinuumX CloudCore + Router |
-| **edge** | ContinuumX EdgeCore + Virtual Thermal ECU + Virtual Ethernet mapper |
+| **edge** | EdgeCore, one mapper, thermal ECU, tire-pressure ECU, NGINX |
 | **servicebus-demo** | Next.js demo app on the edge (HTTP via ServiceBus) |
-| **firmware-catalog** | Optional Next.js store to upload/publish firmware binaries (host-side catalog) |
+| **firmware-catalog** | Sole firmware source. Seeds both ECU binaries from `bin/ecu` |
 
 On first boot the containers bootstrap themselves:
 
 1. Cloud initializes kubeadm, installs CloudCore, enables the Router (`:9443`), publishes the edge join token.
-2. Edge joins CloudCore, starts EdgeCore, starts the **Virtual ECU**, then the **mapper**.
-3. Cloud applies `automotive-thermal-ecu-fw-demo` / `automotive-thermal-ecu-fw-001`.
-4. You can use ServiceBus and the device twin, including **firmwareVersion** OTA (`sim-1.0.0` ↔ `sim-1.1.0`).
+2. Edge joins CloudCore, downloads both ECU baselines from the catalog, then starts the mapper.
+3. Cloud applies the thermal and tire-pressure DeviceModels and Devices, plus NGINX on the edge.
+4. Hands-on checks for each function are in [docker-playground-demo.md](docker-playground-demo.md).
 
 Cold start is usually about **1–2 minutes** after images are built.
 
@@ -115,53 +115,11 @@ make info
 
 ---
 
-## Firmware update (device twin OTA)
+## Demonstrate each function
 
-The edge runs a separate **Virtual Thermal ECU** and the **Virtual Ethernet mapper**.
-Patching `firmwareVersion.desired` makes the mapper call `activate-virtual-ecu`,
-which swaps a staged local binary (`sim-1.0.0` / `sim-1.1.0`), restarts the ECU,
-verifies `/v1/health`, then reports the twin.
+Step-by-step checks (catalog, both ECU health endpoints, coolant setpoint, tire leak, independent firmware updates, NGINX, ServiceBus) are in [docker-playground-demo.md](docker-playground-demo.md).
 
-On the cloud container (`sudo -i`):
-
-```bash
-kubectl get device automotive-thermal-ecu-fw-001 -n default -o json \
-  | jq -r '.spec.properties[] | select(.name=="firmwareVersion") | .desired.value'
-
-kubectl patch device automotive-thermal-ecu-fw-001 -n default --type=json \
-  -p='[
-    {"op":"test","path":"/spec/properties/10/name","value":"firmwareVersion"},
-    {"op":"replace","path":"/spec/properties/10/desired/value","value":"sim-1.1.0"}
-  ]'
-
-kubectl get devicestatus automotive-thermal-ecu-fw-001 -n default -o json \
-  | jq -r '.status.twins[]? | select(.propertyName=="firmwareVersion") |
-      "observedDesired=\(.observedDesired.value) reported=\(.reported.value)"'
-```
-
-On the edge container:
-
-```bash
-curl --unix-socket /run/continuumx-virtual-ecu/ecu.sock http://localhost/v1/health | jq .
-```
-
-Success when ECU health and reported twin both show `sim-1.1.0`.
-
-### Coolant twin (optional)
-
-```bash
-kubectl patch device automotive-thermal-ecu-fw-001 -n default --type=json \
-  -p='[
-    {"op":"test","path":"/spec/properties/14/name","value":"targetCoolantTemperature"},
-    {"op":"replace","path":"/spec/properties/14/desired/value","value":"63.0"}
-  ]'
-```
-
-### Firmware catalog (optional host store)
-
-UI: http://127.0.0.1:3100 — upload/publish binaries for experimentation.
-Live twin OTA uses **pre-staged** candidates in the edge image
-(`/opt/continuumx/firmware-candidates/`), not downloads from this catalog.
+To prove each ECU binary was downloaded from the firmware catalog, including a SHA-256 match, follow [docker-firmware-catalog-test.md](docker-firmware-catalog-test.md).
 
 ---
 

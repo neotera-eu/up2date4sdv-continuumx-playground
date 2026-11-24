@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Mapper entrypoint for the tire-pressure ECU. Catalog download, then local activator.
+exec /usr/local/libexec/continuumx/activate-from-catalog.sh \
+  virtual-tire-pressure-ecu \
+  /usr/local/libexec/continuumx/activate-virtual-tire-ecu.local \
+  "$@"

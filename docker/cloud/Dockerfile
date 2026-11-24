@@ -128,6 +128,7 @@ RUN useradd -m -s /bin/bash -G sudo user \
 COPY docker/cloud/crun-wrap /usr/local/bin/crun-wrap
 COPY docker/cloud/kubeadm-config.yaml.tmpl /opt/cx/kubeadm-config.yaml.tmpl
 COPY manifests/samples/devices/ /opt/cx/devices/
+COPY manifests/templates/nginx-edge.yaml /opt/cx/nginx-edge.yaml
 COPY docker/cloud/cx-bootstrap*.sh docker/cloud/cx-import-images.sh /usr/local/sbin/
 COPY docker/cloud/cx-bootstrap.service /etc/systemd/system/cx-bootstrap.service
 RUN chmod 755 /usr/local/sbin/cx-bootstrap*.sh /usr/local/sbin/cx-import-images.sh /usr/local/bin/crun-wrap \

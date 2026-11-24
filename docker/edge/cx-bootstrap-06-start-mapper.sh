@@ -12,16 +12,17 @@ if [[ ! -S /etc/kubeedge/dmi.sock ]]; then
   exit 1
 fi
 
-echo "waiting for Virtual ECU socket /run/continuumx-virtual-ecu/ecu.sock"
-for _ in $(seq 1 40); do
-  [[ -S /run/continuumx-virtual-ecu/ecu.sock ]] && break
-  sleep 0.5
+for sock in /run/continuumx-virtual-thermal-ecu/ecu.sock /run/continuumx-virtual-tire-ecu/ecu.sock; do
+  echo "waiting for ${sock}"
+  for _ in $(seq 1 40); do
+    [[ -S "$sock" ]] && break
+    sleep 0.5
+  done
+  if [[ ! -S "$sock" ]]; then
+    echo "error: missing ${sock}"
+    exit 1
+  fi
 done
-if [[ ! -S /run/continuumx-virtual-ecu/ecu.sock ]]; then
-  echo "error: Virtual ECU socket missing"
-  journalctl -u continuumx-virtual-ecu -n 40 --no-pager || true
-  exit 1
-fi
 
 # Disable legacy unit name if an older image left it enabled.
 systemctl disable --now continuumx-virtual-ethernet.service 2>/dev/null || true

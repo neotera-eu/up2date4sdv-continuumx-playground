@@ -98,11 +98,16 @@ cat <<EOF
   Device twin + Virtual ECU firmware update
 ------------------------------------------------------------
   Edge services:
-    continuumx-virtual-ecu.service
+    continuumx-virtual-thermal-ecu.service
+    continuumx-virtual-tire-ecu.service
     continuumx-virtual-ethernet-mapper.service
 
   ECU health (inside edge):
-    curl --unix-socket /run/continuumx-virtual-ecu/ecu.sock http://localhost/v1/health
+    curl --unix-socket /run/continuumx-virtual-thermal-ecu/ecu.sock http://localhost/v1/health
+    curl --unix-socket /run/continuumx-virtual-tire-ecu/ecu.sock http://localhost/v1/health
+
+  NGINX on the edge node:  http://${HOST}:8080
+  Walkthrough:             doc/docker-playground-demo.md
 
   On cloud:
     kubectl get devicemodel,device,devicestatus -n default

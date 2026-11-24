@@ -64,4 +64,12 @@ seed_one virtual-thermal-ecu sim-1.1.0 \
   "${SEED_DIR}/virtual-thermal-ecu-sim-1.1.0" \
   "Update candidate Virtual Thermal ECU (bin/ecu …-sim-1.1.0) — twin OTA target"
 
+seed_one virtual-tire-pressure-ecu sim-1.0.0 \
+  "${SEED_DIR}/virtual-tire-pressure-ecu-sim-1.0.0" \
+  "Initial Virtual Tire-Pressure ECU (bin/ecu …-sim-1.0.0) — edge boot baseline"
+
+seed_one virtual-tire-pressure-ecu sim-1.1.0 \
+  "${SEED_DIR}/virtual-tire-pressure-ecu-sim-1.1.0" \
+  "Update candidate Virtual Tire-Pressure ECU (bin/ecu …-sim-1.1.0) — twin OTA target"
+
 exec node server.js

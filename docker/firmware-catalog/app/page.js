@@ -136,11 +136,10 @@ export default function Page() {
       <p className="brand">ContinuumX · OTA</p>
       <h1>Firmware catalog</h1>
       <p className="lede">
-        Sole firmware source for the playground edge. Seeds{" "}
-        <code>virtual-thermal-ecu@sim-1.0.0</code> (boot) and{" "}
-        <code>@sim-1.1.0</code> (OTA) from <code>bin/ecu/linux-amd64/</code>.
-        Edge always downloads by <code>name</code> + <code>version</code> — nothing
-        is baked into the edge image. Upload extra builds below if needed.
+        Sole firmware source for the playground edge. Seeds thermal and
+        tire-pressure ECU binaries at <code>sim-1.0.0</code> and{" "}
+        <code>sim-1.1.0</code> from <code>bin/ecu/linux-amd64/</code>. Edge
+        downloads by <code>name</code> + <code>version</code>.
       </p>
 
       <div className="toolbar">

@@ -1,28 +1,43 @@
 #!/usr/bin/env bash
-# Download a Virtual ECU binary from firmware-catalog and stage it locally.
-# Catalog is the only source of truth; nothing is baked into the edge image.
+# Download one Virtual ECU binary from firmware-catalog and stage it.
+# Catalog is the only firmware source. Nothing is baked into the edge image.
 #
-# Usage: fetch-ecu-from-catalog.sh <version> [--install-active]
+# Usage: fetch-ecu-from-catalog.sh <catalog-name> <version> [--install-active]
+#
+# catalog-name:
+#   virtual-thermal-ecu
+#   virtual-tire-pressure-ecu
 #
 # Env:
 #   FIRMWARE_CATALOG_URL   default http://firmware-catalog:3100
-#   FIRMWARE_CATALOG_NAME  default virtual-thermal-ecu
 #   FIRMWARE_FETCH_TIMEOUT default 30
 #   FIRMWARE_FETCH_RETRIES default 60
 
 set -euo pipefail
 
-VERSION=${1:-}
+NAME=${1:-}
+VERSION=${2:-}
 INSTALL_ACTIVE=0
-[[ "${2:-}" == "--install-active" ]] && INSTALL_ACTIVE=1
+[[ "${3:-}" == "--install-active" ]] && INSTALL_ACTIVE=1
 
 case "$VERSION" in
   sim-1.0.0|sim-1.1.0) ;;
   *) echo "Unsupported firmware version: $VERSION" >&2; exit 2 ;;
 esac
+case "$NAME" in
+  virtual-thermal-ecu)
+    ACTIVE=/opt/continuumx/virtual-thermal-ecu/virtual-thermal-ecu
+    ;;
+  virtual-tire-pressure-ecu)
+    ACTIVE=/opt/continuumx/virtual-tire-pressure-ecu/virtual-tire-pressure-ecu
+    ;;
+  *)
+    echo "Unsupported firmware name: $NAME" >&2
+    exit 2
+    ;;
+esac
 [[ $(id -u) == 0 ]] || { echo 'Must run as root' >&2; exit 1; }
 
-# Optional drop-in from the container environment / image.
 if [[ -f /etc/continuumx/firmware-catalog.env ]]; then
   # shellcheck disable=SC1091
   set -a
@@ -31,14 +46,12 @@ if [[ -f /etc/continuumx/firmware-catalog.env ]]; then
 fi
 
 CANDIDATES=/opt/continuumx/firmware-candidates
-ACTIVE=/opt/continuumx/virtual-thermal-ecu/virtual-thermal-ecu
 CATALOG_URL="${FIRMWARE_CATALOG_URL:-http://firmware-catalog:3100}"
-CATALOG_NAME="${FIRMWARE_CATALOG_NAME:-virtual-thermal-ecu}"
 TIMEOUT="${FIRMWARE_FETCH_TIMEOUT:-30}"
 RETRIES="${FIRMWARE_FETCH_RETRIES:-60}"
-SOURCE="${CANDIDATES}/virtual-thermal-ecu-${VERSION}"
+SOURCE="${CANDIDATES}/${NAME}-${VERSION}"
 BASE="${CATALOG_URL%/}"
-URL="${BASE}/api/download?name=${CATALOG_NAME}&version=${VERSION}"
+URL="${BASE}/api/download?name=${NAME}&version=${VERSION}"
 
 mkdir -p "$CANDIDATES" "$(dirname "$ACTIVE")" /var/log
 
@@ -56,11 +69,11 @@ done
   exit 1
 }
 
-echo "fetching firmware ${CATALOG_NAME}@${VERSION} from ${URL}"
+echo "fetching firmware ${NAME}@${VERSION} from ${URL}"
 tmp="$(mktemp "${CANDIDATES}/.download.XXXXXX")"
 if ! curl -fsSL --max-time "$TIMEOUT" -o "$tmp" "$URL"; then
   rm -f "$tmp"
-  echo "error: catalog download failed for ${CATALOG_NAME}@${VERSION}" >&2
+  echo "error: catalog download failed for ${NAME}@${VERSION}" >&2
   exit 1
 fi
 
@@ -77,13 +90,10 @@ fi
 
 mv -f "$tmp" "$SOURCE"
 echo "staged candidate ${SOURCE}"
-echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) fetched ${CATALOG_NAME}@${VERSION} from ${URL}" \
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) fetched ${NAME}@${VERSION} from ${URL}" \
   >>/var/log/continuumx-catalog-fetch.log
 
 if [[ "$INSTALL_ACTIVE" == 1 ]]; then
-  # Do not clobber an already-running/activated version on service restart
-  # (OTA installs sim-1.1.0 then systemctl restart; ExecStartPre must not
-  # roll that back to sim-1.0.0).
   if [[ -x "$ACTIVE" ]]; then
     echo "active ECU already present at ${ACTIVE}; leaving in place"
   else
